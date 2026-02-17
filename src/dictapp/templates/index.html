@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}Search — CN–RU Dictionary{% endblock %}
+
+{% block content %}
+  <div class="row justify-content-center">
+    <div class="col-lg-8">
+      <h1 class="mb-3">Китайско-русский словарь (MVP)</h1>
+      <p class="text-muted">Введи 汉字 / pinyin / русский перевод — получишь результаты и карточку.</p>
+
+      <form class="card card-body" method="get" action="/search">
+        <div class="mb-3">
+          <label class="form-label">Запрос</label>
+          <input
+            name="q"
+            type="text"
+            class="form-control"
+            placeholder="например: 你好 / xuexi / учиться"
+            required
+          />
+        </div>
+        <button class="btn btn-primary" type="submit">Искать</button>
+      </form>
+
+      <div class="mt-4">
+        <div class="small text-muted">
+          API: <code>/api/search</code>, <code>/api/entry/{id}</code> • Docs: <code>/docs</code>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}

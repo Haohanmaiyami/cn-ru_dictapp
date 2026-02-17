@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+dist/
+build/
+
+# Virtualenv / Poetry
+.venv/
+venv/
+.poetry/
+
+# PyCharm / IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
+# Coverage / tests
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Env files (секреты)
+.env
+.env.*
