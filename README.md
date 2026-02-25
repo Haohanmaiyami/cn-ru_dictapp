@@ -17,3 +17,5 @@ Apply:
 
 poetry run alembic upgrade head
 ```
+
+back to normal
