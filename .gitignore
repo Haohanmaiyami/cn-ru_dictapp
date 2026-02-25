@@ -28,3 +28,4 @@ htmlcov/
 # Env files (секреты)
 .env
 .env.*
+#  22
