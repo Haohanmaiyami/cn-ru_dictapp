@@ -29,3 +29,6 @@ htmlcov/
 .env
 .env.*
 #  22
+
+data/
+*.dsl
