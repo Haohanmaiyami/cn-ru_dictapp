@@ -3,7 +3,7 @@ from dictapp.db import engine
 from dictapp.admin import EntryAdmin
 from fastapi import Depends, FastAPI, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from sqlalchemy import select, or_, and_, func, case
 from dictapp.db import get_session
 from dictapp.repo import get_entry_by_id, search_entries
 from dictapp.schemas import EntryOut, SearchResponse
@@ -50,23 +50,26 @@ async def page_index(request: Request):
 
 @app.get("/search", response_class=HTMLResponse)
 async def page_search(
-        request: Request,
-        q: str = Query("", description="Search query"),
-        limit: int = Query(20, ge=1, le=100),
-        session: AsyncSession = Depends(get_session),
+    request: Request,
+    q: str = Query("", description="Search query"),
+    limit: int = Query(20, ge=1, le=100),
+    session: AsyncSession = Depends(get_session),
 ):
     q_clean = (q or "").strip()
-    results = []
-    if q_clean:
+
+    if not q_clean:
+        results = []
+    else:
         results = await search_entries(session, q=q_clean, limit=limit)
+        results = results or []
 
     return templates.TemplateResponse(
         "results.html",
         {
-            "request":request,
+            "request": request,
             "q": q_clean,
-            "count": len(results),
             "results": results,
+            "count": len(results),
         },
     )
 

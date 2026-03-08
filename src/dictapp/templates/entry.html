@@ -24,7 +24,9 @@
           {% endif %}
 
           <h2 class="h6 text-muted">Перевод</h2>
-          <p class="mb-3">{{ entry.ru }}</p>
+          <p style="white-space: pre-wrap;">
+  {{ entry.examples if entry.examples else entry.ru }}
+</p>
 
           {% if entry.examples %}
             <h2 class="h6 text-muted">Примеры</h2>
