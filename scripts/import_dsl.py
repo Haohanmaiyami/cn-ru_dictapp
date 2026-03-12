@@ -53,6 +53,7 @@ def normalize_head(s: str) -> str:
 _TAG_RE = re.compile(r"\[/?[A-Za-z0-9*]+\]")
 _BRACE_RE = re.compile(r"\{[^}]*\}")
 _INCLUDE_RE = re.compile(r'#INCLUDE\s+"([^"]+)"')
+_REF_RE = re.compile(r"\[ref\](.*?)\[/ref\]", re.IGNORECASE | re.DOTALL)
 
 
 def clean_dsl_text(text_: str) -> str:
@@ -63,6 +64,38 @@ def clean_dsl_text(text_: str) -> str:
     t = re.sub(r"\n{3,}", "\n\n", t)
     return t.strip()
 
+
+def dsl_to_html(text_: str) -> str:
+    """
+    Преобразует DSL в HTML:
+    - [ref]слово[/ref] -> ссылка на поиск
+    - остальные DSL-теги удаляются
+    - переносы строк сохраняются через <br>
+    """
+    t = (text_ or "").replace("\ufeff", "").replace("\u00A0", " ")
+
+    def repl_ref(match):
+        label = match.group(1).strip()
+        if not label:
+            return ""
+        return f'<a href="/search?q={label}">{label}</a>'
+
+    # сначала превращаем ref в ссылки
+    t = _REF_RE.sub(repl_ref, t)
+
+    # потом убираем прочие DSL-теги
+    t = _TAG_RE.sub("", t)
+    t = _BRACE_RE.sub("", t)
+
+    # нормализуем пробелы, но сохраняем абзацы/переносы
+    t = re.sub(r"[ \t]+", " ", t)
+    t = re.sub(r"\n{3,}", "\n\n", t)
+    t = t.strip()
+
+    # переносы строк -> <br>
+    t = t.replace("\n", "<br>")
+
+    return t
 
 def iter_dsl_articles(path: Path, encoding: str = "utf-16") -> Iterator[tuple[str, str]]:
     def walk_file(p: Path) -> Iterator[str]:
@@ -224,14 +257,14 @@ def iter_entries_for_file(path: Path, encoding: str = "utf-16") -> Iterator[Pars
                 hanzi=hanzi,
                 pinyin=pinyin,
                 ru_head=ru_text,
-                ru_full=ru_text,
+                ru_full=dsl_to_html(body) if body else ru_text,
             )
 
         else:
             ru_head = head
             hanzi = extract_first_hanzi(body_clean) or "-"
             pinyin = extract_pinyin_after_hanzi(body_clean) or extract_first_pinyin_line(body_clean)
-            ru_full = body_clean if body_clean else None
+            ru_full = dsl_to_html(body) if body else None
 
             yield ParsedEntry(
                 hanzi=hanzi,
