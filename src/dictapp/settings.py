@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     db_user: str
     db_password: str
 
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "qwen2.5:7b"
+
     @property
     def database_url(self) -> str:
         # async url for sqlalchemy

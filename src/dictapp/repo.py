@@ -24,6 +24,25 @@ def _looks_like_pinyin(s: str) -> bool:
 def _escape_like(s: str) -> str:
     return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
+def _extract_only_cjk(text: str) -> str:
+    return "".join(_CJK_RE.findall(text or ""))
+
+def _generate_cjk_ngrams(text: str, max_len: int = 4) -> list[str]:
+    chars = _extract_only_cjk(text)
+    if not chars:
+        return []
+
+    found: list[str] = []
+    seen: set[str] = set()
+
+    for length in range(min(max_len, len(chars)), 0, -1):
+        for i in range(0, len(chars) - length + 1):
+            piece = chars[i:i + length]
+            if piece not in seen:
+                seen.add(piece)
+                found.append(piece)
+
+    return found
 
 async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list[Entry]:
     q = (q or "").strip()
@@ -207,3 +226,49 @@ async def get_entry_by_id(session: AsyncSession, entry_id: int) -> Entry | None:
     stmt = select(Entry).where(Entry.id == entry_id)
     result = await session.execute(stmt)
     return result.scalars().first()
+
+async def find_dictionary_hits_for_text(
+    session: AsyncSession,
+    text: str,
+    *,
+    max_ngram_len: int = 4,
+    limit: int = 8,
+) -> list[Entry]:
+    candidates = _generate_cjk_ngrams(text, max_len=max_ngram_len)
+    if not candidates:
+        return []
+
+    stmt = (
+        select(Entry)
+        .where(Entry.hanzi.in_(candidates))
+        .order_by(func.length(Entry.hanzi).desc(), Entry.id)
+    )
+
+    result = await session.execute(stmt)
+    rows = list(result.scalars().all())
+
+    multi_char: list[Entry] = []
+    single_char: list[Entry] = []
+    seen: set[str] = set()
+
+    for row in rows:
+        hanzi = (row.hanzi or "").strip()
+        if not hanzi or hanzi in seen:
+            continue
+        seen.add(hanzi)
+
+        if len(hanzi) >= 2:
+            multi_char.append(row)
+        else:
+            single_char.append(row)
+
+    # если уже нашли достаточно нормальных многосимвольных слов,
+    # односимвольные вообще не добавляем
+    if len(multi_char) >= 3:
+        return multi_char[:limit]
+
+    chosen = multi_char[:limit]
+    if len(chosen) < limit:
+        chosen.extend(single_char[: limit - len(chosen)])
+
+    return chosen

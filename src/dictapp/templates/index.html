@@ -8,7 +8,7 @@
       <h1 class="mb-3">САМЫЙ ЛУЧШИЙ СЛОВАРЬ В МИРЕ</h1>
       <p class="text-muted">Введи 汉字 / pinyin / русский перевод — получишь результаты и карточку.</p>
 
-      <form class="card card-body" method="get" action="/search">
+      <form class="card card-body mb-4" method="get" action="/search">
         <div class="mb-3">
           <label class="form-label">Запрос</label>
           <input
@@ -22,11 +22,207 @@
         <button class="btn btn-primary" type="submit">Искать</button>
       </form>
 
+      <div class="card">
+        <div class="card-body">
+          <h2 class="h5 mb-3">AI-разбор предложения</h2>
+          <p class="text-muted">
+            Выбери режим: разбор китайского предложения или перевод с русского на китайский.
+          </p>
+
+          <div class="mb-3">
+            <div class="form-check form-check-inline">
+              <input
+                class="form-check-input"
+                type="radio"
+                name="ai-mode"
+                id="mode-cn-ru"
+                value="cn-ru"
+                checked
+              />
+              <label class="form-check-label" for="mode-cn-ru">CN → RU</label>
+            </div>
+
+            <div class="form-check form-check-inline">
+              <input
+                class="form-check-input"
+                type="radio"
+                name="ai-mode"
+                id="mode-ru-cn"
+                value="ru-cn"
+              />
+              <label class="form-check-label" for="mode-ru-cn">RU → CN</label>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <textarea
+              id="ai-text"
+              class="form-control"
+              rows="4"
+              placeholder="например: 我昨天本来想去，但是后来没时间了"
+            ></textarea>
+          </div>
+
+          <div class="d-flex gap-2 mb-3">
+            <button class="btn btn-dark" id="ai-analyze-btn" type="button">Разобрать</button>
+            <button class="btn btn-outline-secondary" id="ai-fill-demo-btn" type="button">Подставить пример</button>
+          </div>
+
+          <div id="ai-status" class="small text-muted mb-3"></div>
+
+          <div id="ai-result" class="d-none">
+            <h3 class="h6 text-muted" id="ai-hits-title">Найдено в словаре</h3>
+            <ul id="ai-hits" class="list-group mb-3"></ul>
+
+            <h3 class="h6 text-muted" id="ai-analysis-title">AI-анализ</h3>
+            <div id="ai-analysis" class="border rounded p-3 bg-light" style="white-space: pre-wrap;"></div>
+          </div>
+        </div>
+      </div>
+
       <div class="mt-4">
         <div class="small text-muted">
-          API: <code>/api/search</code>, <code>/api/entry/{id}</code> • Docs: <code>/docs</code>
+          API:
+          <code>/api/search</code>,
+          <code>/api/entry/{id}</code>,
+          <code>/api/ai/analyze</code>,
+          <code>/api/ai/translate-ru-to-cn</code>
+          • Docs: <code>/docs</code>
         </div>
       </div>
     </div>
   </div>
+
+  <script>
+    const aiText = document.getElementById("ai-text");
+    const aiAnalyzeBtn = document.getElementById("ai-analyze-btn");
+    const aiFillDemoBtn = document.getElementById("ai-fill-demo-btn");
+    const aiStatus = document.getElementById("ai-status");
+    const aiResult = document.getElementById("ai-result");
+    const aiHits = document.getElementById("ai-hits");
+    const aiAnalysis = document.getElementById("ai-analysis");
+
+    const aiHitsTitle = document.getElementById("ai-hits-title");
+    const aiAnalysisTitle = document.getElementById("ai-analysis-title");
+    const modeCnRu = document.getElementById("mode-cn-ru");
+    const modeRuCn = document.getElementById("mode-ru-cn");
+
+    function getCurrentMode() {
+      return modeRuCn.checked ? "ru-cn" : "cn-ru";
+    }
+
+    function updateAIModeUI() {
+      const mode = getCurrentMode();
+
+      aiResult.classList.add("d-none");
+      aiHits.innerHTML = "";
+      aiAnalysis.textContent = "";
+      aiStatus.textContent = "";
+
+      if (mode === "cn-ru") {
+        aiText.placeholder = "например: 我昨天本来想去，但是后来没时间了";
+        aiHitsTitle.textContent = "Найдено в словаре";
+        aiAnalysisTitle.textContent = "AI-анализ";
+        aiFillDemoBtn.textContent = "Подставить пример";
+      } else {
+        aiText.placeholder = "например: Привет, мастер, ты когда пойдёшь есть?";
+        aiHitsTitle.textContent = "Словарные подсказки";
+        aiAnalysisTitle.textContent = "AI-перевод";
+        aiFillDemoBtn.textContent = "Подставить пример";
+      }
+    }
+
+    modeCnRu.addEventListener("change", updateAIModeUI);
+    modeRuCn.addEventListener("change", updateAIModeUI);
+
+    aiFillDemoBtn.addEventListener("click", () => {
+      const mode = getCurrentMode();
+
+      if (mode === "cn-ru") {
+        aiText.value = "我昨天本来想去，但是后来没时间了";
+      } else {
+        aiText.value = "Привет, мастер, ты когда пойдёшь есть?";
+      }
+    });
+
+    aiAnalyzeBtn.addEventListener("click", async () => {
+      const text = aiText.value.trim();
+      const mode = getCurrentMode();
+
+      if (!text) {
+        aiStatus.textContent = "Сначала введи текст.";
+        aiResult.classList.add("d-none");
+        return;
+      }
+
+      aiStatus.textContent = "Анализируем... Это может занять несколько секунд.";
+      aiResult.classList.add("d-none");
+      aiHits.innerHTML = "";
+      aiAnalysis.textContent = "";
+
+      try {
+        let response;
+
+        if (mode === "cn-ru") {
+          response = await fetch("/api/ai/analyze", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ text })
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || "Ошибка AI-анализа");
+          }
+
+          const data = await response.json();
+
+          for (const hit of data.dictionary_hits) {
+            const li = document.createElement("li");
+            li.className = "list-group-item";
+
+            const pinyin = hit.pinyin ? ` — ${hit.pinyin}` : "";
+            const pos = hit.pos ? ` [${hit.pos}]` : "";
+            const shortRu = hit.ru && hit.ru.length > 120 ? hit.ru.slice(0, 120) + "..." : hit.ru;
+
+            li.textContent = `${hit.hanzi}${pinyin}${pos} — ${shortRu}`;
+            aiHits.appendChild(li);
+          }
+
+          aiAnalysis.textContent = data.analysis || "AI не вернул ответ.";
+          aiHitsTitle.style.display = "";
+          aiHits.style.display = "";
+        } else {
+          response = await fetch("/api/ai/translate-ru-to-cn", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ text })
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || "Ошибка AI-перевода");
+          }
+
+          const data = await response.json();
+
+          aiHitsTitle.style.display = "none";
+          aiHits.style.display = "none";
+          aiAnalysis.textContent = data.translation || "AI не вернул ответ.";
+        }
+
+        aiResult.classList.remove("d-none");
+        aiStatus.textContent = "Готово.";
+      } catch (error) {
+        aiStatus.textContent = `Ошибка: ${error.message}`;
+        aiResult.classList.add("d-none");
+      }
+    });
+
+    updateAIModeUI();
+  </script>
 {% endblock %}

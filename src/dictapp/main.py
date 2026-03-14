@@ -6,12 +6,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, and_, func, case
 from dictapp.db import get_session
 from dictapp.repo import get_entry_by_id, search_entries
+from dictapp.repo import find_dictionary_hits_for_text
 from dictapp.schemas import EntryOut, SearchResponse
-
+from dictapp.schemas import AIAnalyzeRequest, AIAnalyzeResponse, AIDictionaryHit
+from dictapp.ollama_service import analyze_with_ollama
+from dictapp.ollama_service import translate_ru_to_cn_with_ollama
 from fastapi import Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from dictapp.schemas import AITranslateRuToCnRequest, AITranslateRuToCnResponse
 
 app = FastAPI(title="Chinese-Russian Dictionary MVP")
 app.mount("/static", StaticFiles(directory="src/dictapp/static"), name="static")
@@ -20,6 +24,10 @@ templates = Jinja2Templates(directory="src/dictapp/templates")
 admin = Admin(app, engine)
 admin.add_view(EntryAdmin)
 
+
+@app.get("/api/health")
+async def api_health():
+    return {"status": "ok"}
 
 @app.get("/api/search", response_model=SearchResponse)
 async def api_search(
@@ -40,6 +48,50 @@ async def api_entry(
     if entry is None:
         raise HTTPException(status_code=404, detail="Entry not found")
     return entry
+
+
+@app.post("/api/ai/analyze", response_model=AIAnalyzeResponse)
+async def api_ai_analyze(
+    payload: AIAnalyzeRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    text = (payload.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Text is required")
+
+    hits = await find_dictionary_hits_for_text(session, text=text, limit=12)
+    analysis = await analyze_with_ollama(text=text, dictionary_entries=hits)
+
+    return AIAnalyzeResponse(
+        text=text,
+        dictionary_hits=[
+            AIDictionaryHit(
+                hanzi=e.hanzi,
+                pinyin=e.pinyin,
+                ru=e.ru,
+                pos=e.pos,
+            )
+            for e in hits
+        ],
+        analysis=analysis,
+    )
+
+
+@app.post("/api/ai/translate-ru-to-cn", response_model=AITranslateRuToCnResponse)
+async def api_ai_translate_ru_to_cn(
+    payload: AITranslateRuToCnRequest,
+):
+    text = (payload.text or "").strip()
+
+    if not text:
+        raise HTTPException(status_code=400, detail="Text is required")
+
+    translation = await translate_ru_to_cn_with_ollama(text=text)
+
+    return AITranslateRuToCnResponse(
+        text=text,
+        translation=translation,
+    )
 
 @app.get("/", response_class=HTMLResponse)
 async def page_index(request: Request):
