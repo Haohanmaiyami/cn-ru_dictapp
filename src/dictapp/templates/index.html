@@ -80,18 +80,27 @@
         </div>
       </div>
 
-      <div class="mt-4">
-        <div class="small text-muted">
-          API:
-          <code>/api/search</code>,
-          <code>/api/entry/{id}</code>,
-          <code>/api/ai/analyze</code>,
-          <code>/api/ai/translate-ru-to-cn</code>
-          • Docs: <code>/docs</code>
-        </div>
-      </div>
-    </div>
-  </div>
+<div style="margin-top: 20px;">
+  <h3>GET API Endpoints</h3>
+  <ul>
+    <li><a href="/api/health">GET /api/health</a></li>
+    <li><a href="/api/search?q=你好">GET /api/search</a></li>
+    <li><a href="/api/entry/1">GET /api/entry/{entry_id}</a></li>
+  </ul>
+
+  <h3>POST API Endpoints</h3>
+  <ul>
+    <li>POST /api/ai/analyze — use via <a href="/docs">Swagger Docs</a></li>
+    <li>POST /api/ai/translate-ru-to-cn — use via <a href="/docs">Swagger Docs</a></li>
+  </ul>
+
+  <h3>Pages</h3>
+  <ul>
+    <li><a href="/">GET /</a></li>
+    <li><a href="/search?q=你好">GET /search</a></li>
+    <li><a href="/entry/1">GET /entry/{entry_id}</a></li>
+  </ul>
+</div>
 
   <script>
     const aiText = document.getElementById("ai-text");
