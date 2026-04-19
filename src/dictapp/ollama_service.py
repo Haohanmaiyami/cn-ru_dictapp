@@ -1,3 +1,5 @@
+import json
+
 import httpx
 from dictapp.models import Entry
 from dictapp.settings import settings
@@ -28,51 +30,51 @@ def build_analysis_prompt(text: str, dictionary_context: str) -> str:
     return f"""
 Ты помощник по китайскому языку для русскоязычного пользователя.
 
-Отвечай ТОЛЬКО на русском языке.
-Не пиши длинные словарные статьи.
-Главная задача: перевести предложение ТОЧНО, а не вольно.
+Задача:
+проанализировать китайское предложение и вернуть СТРОГО валидный JSON.
 
-Сначала дай БУКВАЛЬНЫЙ перевод, максимально близкий к китайскому тексту.
-Потом дай ЕСТЕСТВЕННЫЙ перевод на хорошем русском.
-Не заменяй буквальный перевод пересказом.
-Если в предложении есть разговорность, укажи это отдельно.
-
-Если в предложении используется мат, грубая лексика или оскорбления,
-переводи их честно и прямо.
-
-Не смягчай ругательства и не заменяй их нейтральными словами.
-Не цензурируй перевод.
-
-Если в оригинале используется грубая или вульгарная речь,
-перевод на русский должен передавать ту же степень грубости.
+ВАЖНО:
+- literal и natural должны быть ТОЛЬКО на русском языке
+- НЕЛЬЗЯ оставлять китайский текст в literal или natural
+- Если не уверен в literal, всё равно дай максимально близкий русский перевод
+- Если не уверен в natural, всё равно дай естественный русский перевод
+- pinyin должен быть для ВСЕЙ китайской фразы целиком
+- keywords должны быть китайскими словами или выражениями из исходной фразы
+- Никакого текста вне JSON
+- Никаких пояснений
+- Никаких markdown-блоков
+- Никаких символов ```json
+- Нельзя писать многоточия "..."
+- Нельзя дублировать исходное китайское предложение в полях literal и natural
+- Если не можешь надёжно дать pinyin, верни пустую строку ""
+- Если не можешь надёжно дать keywords, верни пустой список []
 
 Верни ответ СТРОГО в таком формате:
 
-Буквальный перевод:
-...
+{{
+  "literal": "русский буквальный перевод",
+  "natural": "русский естественный перевод",
+  "pinyin": "полный пиньинь всей фразы с тонами или пустая строка",
+  "keywords": ["китайское слово 1", "китайское слово 2", "китайское слово 3"]
+}}
 
-Естественный перевод:
-...
+Проверь перед ответом:
+1. literal написан по-русски
+2. natural написан по-русски
+3. literal не совпадает с исходным китайским текстом
+4. natural не совпадает с исходным китайским текстом
+5. JSON валиден
 
-Пиньинь:
-...
-
-Ключевые слова:
-- ...
-- ...
-- ...
-
-Пояснение:
-...
-
-Предложение:
+Исходное предложение:
 {text}
 
 Словарные данные:
 {dictionary_context}
 """.strip()
 
-async def analyze_with_ollama(text: str, dictionary_entries: list[Entry]) -> str:
+
+# >>> CHANGE: теперь функция возвращает dict, а не строку
+async def analyze_with_ollama(text: str, dictionary_entries: list[Entry]) -> dict:
     dictionary_context = build_dictionary_context(dictionary_entries)
     prompt = build_analysis_prompt(text=text, dictionary_context=dictionary_context)
 
@@ -90,7 +92,37 @@ async def analyze_with_ollama(text: str, dictionary_entries: list[Entry]) -> str
         response.raise_for_status()
         data = response.json()
 
-    return (data.get("response") or "").strip()
+    # >>> CHANGE: раньше возвращали просто текст
+    raw_response = (data.get("response") or "").strip()
+
+    # >>> CHANGE: пытаемся распарсить JSON
+    try:
+        parsed = json.loads(raw_response)
+    except json.JSONDecodeError:
+        return {
+            "literal": "",
+            "natural": raw_response,
+            "pinyin": "",
+            "keywords": [],
+        }
+
+    literal = str(parsed.get("literal", "") or "").strip()
+    natural = str(parsed.get("natural", "") or "").strip()
+    pinyin = str(parsed.get("pinyin", "") or "").strip()
+    keywords = parsed.get("keywords", []) or []
+
+    if any("\u3400" <= ch <= "\u9fff" for ch in literal):
+        literal = ""
+
+    if any("\u3400" <= ch <= "\u9fff" for ch in natural):
+        natural = ""
+
+    return {
+        "literal": literal,
+        "natural": natural,
+        "pinyin": pinyin,
+        "keywords": keywords,
+    }
 
 
 

@@ -28,8 +28,11 @@ class AIDictionaryHit(BaseModel):
 
 class AIAnalyzeResponse(BaseModel):
     text: str
+    literal: str
+    natural: str
+    pinyin: str
+    keywords: list[str]
     dictionary_hits: list[AIDictionaryHit]
-    analysis: str
 
 
 class AITranslateRuToCnRequest(BaseModel):

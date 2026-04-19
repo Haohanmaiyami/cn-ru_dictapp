@@ -2,6 +2,25 @@ import re
 from sqlalchemy import select, case, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from dictapp.models import Entry
+import unicodedata
+
+
+def is_valid_hanzi_word(h: str) -> bool:
+    if not h:
+        return False
+
+    h = h.strip()
+
+    if len(h) < 2:
+        return False
+
+    BAD = {"的", "了", "那", "这个", "那个", "的那", "的是", "的话"}
+
+    if h in BAD:
+        return False
+
+    return True
+
 
 
 _CJK_RE = re.compile(r"[\u3400-\u9FFF]")
@@ -12,17 +31,70 @@ _CYR_RE = re.compile(r"[А-Яа-яЁё]")
 def _has_cjk(s: str) -> bool:
     return bool(_CJK_RE.search(s))
 
+def normalize_pinyin(text: str) -> str:
+    if not text:
+        return ""
+
+    text = text.lower()
+
+    #убираем тоны (nǐ → ni)
+    text = unicodedata.normalize("NFD", text)
+    text = "".join(c for c in text if unicodedata.category(c) != "Mn")
+
+    # убираем лишние символы
+    text = re.sub(r"[^a-z\s]", "", text)
+
+    # убираем двойные пробелы
+    text = " ".join(text.split())
+
+    return text
+
 
 def _has_cyrillic(s: str) -> bool:
     return bool(_CYR_RE.search(s))
 
 
 def _looks_like_pinyin(s: str) -> bool:
-    return bool(_LAT_RE.search(s)) and not _has_cyrillic(s) and not _has_cjk(s)
+    if not s or _has_cyrillic(s) or _has_cjk(s):
+        return False
+
+    return bool(normalize_pinyin(s))
 
 
 def _escape_like(s: str) -> str:
     return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def normalize_query(q: str) -> str:
+    if not q:
+        return ""
+    return " ".join(q.strip().split())
+
+def clean_and_deduplicate_entries(entries: list[Entry]) -> list[Entry]:
+    seen: set[str] = set()
+    cleaned: list[Entry] = []
+
+    for e in entries:
+        hanzi = (e.hanzi or "").strip()
+        ru = (e.ru or "").strip()
+        pinyin = (e.pinyin or "").strip()
+
+        # Совсем пустой мусор не пропускаем
+        if not hanzi and not ru and not pinyin:
+            continue
+
+        # Для словарной статьи hanzi должен быть
+        if not hanzi:
+            continue
+
+        # Убираем дубли по hanzi
+        if hanzi in seen:
+            continue
+
+        seen.add(hanzi)
+        cleaned.append(e)
+
+    return cleaned
 
 def _extract_only_cjk(text: str) -> str:
     return "".join(_CJK_RE.findall(text or ""))
@@ -45,7 +117,7 @@ def _generate_cjk_ngrams(text: str, max_len: int = 4) -> list[str]:
     return found
 
 async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list[Entry]:
-    q = (q or "").strip()
+    q = normalize_query(q)
     if not q:
         return []
 
@@ -72,30 +144,46 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
         )
 
         res = await session.execute(stmt)
-        return list(res.scalars().all())
+        results = list(res.scalars().all())
+        results = clean_and_deduplicate_entries(results)
+        return results[:limit]
 
     # =========================
     # 2) Поиск по pinyin
     # =========================
     if _looks_like_pinyin(q):
-        rank = case(
-            (Entry.pinyin == q, 0),
-            (Entry.pinyin.ilike(f"{q_like}%", escape="\\"), 1),
-            (Entry.pinyin.ilike(f"%{q_like}%", escape="\\"), 2),
-            else_=100,
-        ).label("rank")
+        # нормализуем запрос пользователя
+        q_norm = normalize_pinyin(q)
 
+        # Если после нормализации ничего не осталось - выходим
+        if not q_norm:
+            return []
+
+        # Забираем кандидатов, где pinyin не пустой
         stmt = (
             select(Entry)
             .where(Entry.pinyin.is_not(None))
             .where(func.btrim(Entry.pinyin) != "")
-            .where(Entry.pinyin.ilike(f"%{q_like}%", escape="\\"))
-            .order_by(rank, func.length(Entry.pinyin), Entry.id)
-            .limit(limit)
         )
-
         res = await session.execute(stmt)
-        return list(res.scalars().all())
+        candidates = list(res.scalars().all())
+
+        # фильтруем уже в пайтон после normalize_pinyin
+        matched = []
+        for entry in candidates:
+            entry_pinyin_norm = normalize_pinyin(entry.pinyin or "")
+            if q_norm in entry_pinyin_norm:
+                matched.append(entry)
+
+        # чистим дубли и режем limit
+        matched = clean_and_deduplicate_entries(matched)
+        matched = [
+            r for r in matched
+            if r.hanzi and len(r.hanzi) >= 2
+        ]
+        return matched[:limit]
+
+
 
     # =========================
     # 3) Поиск по русскому
@@ -149,6 +237,7 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
         )
         exact_orm_res = await session.execute(exact_stmt)
         exact_items = list(exact_orm_res.scalars().all())
+        exact_items = clean_and_deduplicate_entries(exact_items)
 
     print("DEBUG exact_items_count =", len(exact_items))
     for item in exact_items[:5]:
@@ -214,12 +303,14 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
         )
         rest_orm_res = await session.execute(rest_stmt)
         rest_items = list(rest_orm_res.scalars().all())
+        rest_items = clean_and_deduplicate_entries(rest_items)
 
     print("DEBUG rest_items_count =", len(rest_items))
     for item in rest_items[:5]:
         print("DEBUG rest_item =", item.id, item.hanzi, item.pinyin, item.ru)
 
-    return exact_items + rest_items
+    combined = clean_and_deduplicate_entries(exact_items + rest_items)
+    return combined[:limit]
 
 
 async def get_entry_by_id(session: AsyncSession, entry_id: int) -> Entry | None:
@@ -246,16 +337,19 @@ async def find_dictionary_hits_for_text(
 
     result = await session.execute(stmt)
     rows = list(result.scalars().all())
+    rows = clean_and_deduplicate_entries(rows)
+
+    # убираем мусорные hits
+    rows = [
+        row for row in rows
+        if is_valid_hanzi_word(row.hanzi)
+    ]
 
     multi_char: list[Entry] = []
     single_char: list[Entry] = []
-    seen: set[str] = set()
 
     for row in rows:
         hanzi = (row.hanzi or "").strip()
-        if not hanzi or hanzi in seen:
-            continue
-        seen.add(hanzi)
 
         if len(hanzi) >= 2:
             multi_char.append(row)

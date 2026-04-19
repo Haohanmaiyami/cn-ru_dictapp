@@ -35,8 +35,14 @@ async def api_search(
     limit: int = Query(20, ge=1, le=100),
     session: AsyncSession = Depends(get_session),
 ):
-    results = await search_entries(session, q=q, limit=limit)
-    return SearchResponse(q=q, count=len(results), results=results)
+    q_clean = " ".join((q or "").strip().split())
+
+    if not q_clean:
+        results = []
+    else:
+        results = await search_entries(session, q=q_clean, limit=limit)
+
+    return SearchResponse(q=q_clean, count=len(results), results=results)
 
 
 @app.get("/api/entry/{entry_id}", response_model=EntryOut)
@@ -60,10 +66,14 @@ async def api_ai_analyze(
         raise HTTPException(status_code=400, detail="Text is required")
 
     hits = await find_dictionary_hits_for_text(session, text=text, limit=12)
-    analysis = await analyze_with_ollama(text=text, dictionary_entries=hits)
+    analysis_data = await analyze_with_ollama(text=text, dictionary_entries=hits)
 
     return AIAnalyzeResponse(
         text=text,
+        literal=analysis_data["literal"],
+        natural=analysis_data["natural"],
+        pinyin=analysis_data["pinyin"],
+        keywords=analysis_data["keywords"],
         dictionary_hits=[
             AIDictionaryHit(
                 hanzi=e.hanzi,
@@ -73,7 +83,6 @@ async def api_ai_analyze(
             )
             for e in hits
         ],
-        analysis=analysis,
     )
 
 
@@ -107,7 +116,7 @@ async def page_search(
     limit: int = Query(20, ge=1, le=100),
     session: AsyncSession = Depends(get_session),
 ):
-    q_clean = (q or "").strip()
+    q_clean = " ".join((q or "").strip().split())
 
     if not q_clean:
         results = []
