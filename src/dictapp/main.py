@@ -16,6 +16,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from dictapp.schemas import AITranslateRuToCnRequest, AITranslateRuToCnResponse
+from dictapp.repo import split_ru_examples
 
 app = FastAPI(title="Chinese-Russian Dictionary MVP")
 app.mount("/static", StaticFiles(directory="src/dictapp/static"), name="static")
@@ -42,6 +43,15 @@ async def api_search(
     else:
         results = await search_entries(session, q=q_clean, limit=limit)
 
+        cleaned_results = []
+        for entry in results:
+            translation, examples = split_ru_examples(entry.ru or "")
+            entry.ru = translation
+            entry.examples = examples
+            cleaned_results.append(entry)
+
+        results = cleaned_results
+
     return SearchResponse(q=q_clean, count=len(results), results=results)
 
 
@@ -53,7 +63,16 @@ async def api_entry(
     entry = await get_entry_by_id(session, entry_id=entry_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="Entry not found")
-    return entry
+    translation, examples = split_ru_examples(entry.ru or "")
+
+    return EntryOut(
+        id=entry.id,
+        hanzi=entry.hanzi,
+        pinyin=entry.pinyin,
+        ru=translation,
+        pos=entry.pos,
+        examples=examples,
+    )
 
 
 @app.post("/api/ai/analyze", response_model=AIAnalyzeResponse)
@@ -122,6 +141,23 @@ async def page_search(
         results = []
     else:
         results = await search_entries(session, q=q_clean, limit=limit)
+        cleaned_results = []
+
+        for entry in results:
+            translation, examples = split_ru_examples(entry.ru or "")
+
+            cleaned_results.append(
+                EntryOut(
+                    id=entry.id,
+                    hanzi=entry.hanzi,
+                    pinyin=entry.pinyin,
+                    ru=translation,
+                    pos=entry.pos,
+                    examples=examples,
+                )
+            )
+
+        results = cleaned_results
         results = results or []
 
     return templates.TemplateResponse(
@@ -143,6 +179,11 @@ async def page_entry(
     entry = await get_entry_by_id(session, entry_id=entry_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="Entry not found")
+
+    translation, examples = split_ru_examples(entry.ru or "")
+
+    entry.ru = translation
+    entry.examples = examples
 
     return templates.TemplateResponse(
         "entry.html",
