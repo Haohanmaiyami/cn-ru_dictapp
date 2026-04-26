@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from dictapp.schemas import AITranslateRuToCnRequest, AITranslateRuToCnResponse
 from dictapp.repo import split_ru_examples
+from dictapp.repo import get_effective_pinyin
 
 app = FastAPI(title="Chinese-Russian Dictionary MVP")
 app.mount("/static", StaticFiles(directory="src/dictapp/static"), name="static")
@@ -48,6 +49,7 @@ async def api_search(
             translation, examples = split_ru_examples(entry.ru or "")
             entry.ru = translation
             entry.examples = examples
+            entry.pinyin = get_effective_pinyin(entry)
             cleaned_results.append(entry)
 
         results = cleaned_results
@@ -68,7 +70,7 @@ async def api_entry(
     return EntryOut(
         id=entry.id,
         hanzi=entry.hanzi,
-        pinyin=entry.pinyin,
+        pinyin=get_effective_pinyin(entry),
         ru=translation,
         pos=entry.pos,
         examples=examples,
@@ -114,11 +116,12 @@ async def api_ai_translate_ru_to_cn(
     if not text:
         raise HTTPException(status_code=400, detail="Text is required")
 
-    translation = await translate_ru_to_cn_with_ollama(text=text)
+    result = await translate_ru_to_cn_with_ollama(text=text)
 
     return AITranslateRuToCnResponse(
         text=text,
-        translation=translation,
+        translation=result["translation"],
+        pinyin=result["pinyin"],
     )
 
 @app.get("/", response_class=HTMLResponse)
@@ -150,7 +153,7 @@ async def page_search(
                 EntryOut(
                     id=entry.id,
                     hanzi=entry.hanzi,
-                    pinyin=entry.pinyin,
+                    pinyin=get_effective_pinyin(entry),
                     ru=translation,
                     pos=entry.pos,
                     examples=examples,

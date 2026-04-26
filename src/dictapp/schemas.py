@@ -42,3 +42,4 @@ class AITranslateRuToCnRequest(BaseModel):
 class AITranslateRuToCnResponse(BaseModel):
     text: str
     translation: str
+    pinyin: str = ""

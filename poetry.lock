@@ -763,6 +763,18 @@ files = [
 windows-terminal = ["colorama (>=0.4.6)"]
 
 [[package]]
+name = "pypinyin"
+version = "0.55.0"
+description = "汉字拼音转换模块/工具."
+optional = false
+python-versions = "!=3.0.*,!=3.1.*,!=3.2.*,<4,>=2.6"
+groups = ["main"]
+files = [
+    {file = "pypinyin-0.55.0-py2.py3-none-any.whl", hash = "sha256:d53b1e8ad2cdb815fb2cb604ed3123372f5a28c6f447571244aca36fc62a286f"},
+    {file = "pypinyin-0.55.0.tar.gz", hash = "sha256:b5711b3a0c6f76e67408ec6b2e3c4987a3a806b7c528076e7c7b86fcf0eaa66b"},
+]
+
+[[package]]
 name = "pytest"
 version = "9.0.2"
 description = "pytest: simple powerful testing with Python"
@@ -1382,5 +1394,5 @@ email = ["email-validator"]
 
 [metadata]
 lock-version = "2.1"
-python-versions = ">=3.13"
-content-hash = "becc910f6b55c29e05bb159dccd8b5c9257d10ac2aa876de0cc3b8e82a690b12"
+python-versions = ">=3.13,<4.0"
+content-hash = "c7e8acf9e4004664dcefd3e80e6c41653fb0329fb89ed919db18acf2d821cb3d"

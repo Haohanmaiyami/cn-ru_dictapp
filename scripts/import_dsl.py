@@ -6,12 +6,23 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, Optional
 
+DEBUG = False
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dictapp.db import AsyncSessionMaker
 from dictapp.models import Entry
 
+BAD_LOG_FILE = Path("bad_entries.log")
+
+def log_bad_entry(reason: str, hanzi: str, pinyin: str | None, ru: str | None):
+    with BAD_LOG_FILE.open("a", encoding="utf-8") as f:
+        f.write(f"{reason}\n")
+        f.write(f"hanzi: {hanzi}\n")
+        f.write(f"pinyin: {pinyin}\n")
+        f.write(f"ru: {ru[:200] if ru else None}\n")
+        f.write("=" * 40 + "\n")
 
 _CJK_RE = re.compile(r"[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]")
 _PINYIN_LIKE_RE = re.compile(
@@ -290,9 +301,19 @@ async def import_file(session: AsyncSession, file_path: Path, batch_size: int = 
         ru_full = item.ru_full.strip() if item.ru_full else None
 
         if not ru_head:
+            log_bad_entry("EMPTY_RU_HEAD", hanzi, pinyin, ru_full)
             continue
 
-        if ru_head.lower() == "москва":
+        if not hanzi or hanzi.strip() == "-":
+            log_bad_entry("NO_HANZI", hanzi, pinyin, ru_head)
+            continue
+
+        if not pinyin and len(hanzi) <= 4:
+            log_bad_entry("NO_PINYIN", hanzi, None, ru_head)
+
+
+
+        if DEBUG and ru_head.lower() == "москва":
             print("\n=== DEBUG IMPORT MOSCOW ===")
             print("FILE:", file_path.name)
             print("ru_head:", repr(ru_head))
@@ -315,7 +336,8 @@ async def import_file(session: AsyncSession, file_path: Path, batch_size: int = 
             try:
                 await session.commit()
                 inserted += len(batch)
-                print(f"✅ inserted: {inserted}")
+                if inserted % 50000 == 0:
+                    print(f"inserted: {inserted}")
             except Exception:
                 await session.rollback()
                 bad = batch[-1]

@@ -3,6 +3,7 @@ from sqlalchemy import select, case, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from dictapp.models import Entry
 import unicodedata
+from pypinyin import lazy_pinyin, Style
 
 
 
@@ -88,6 +89,26 @@ def normalize_pinyin(text: str) -> str:
 
     return text
 
+
+def generate_pinyin_from_hanzi(hanzi: str | None) -> str:
+    if not hanzi:
+        return ""
+
+    hanzi = hanzi.strip()
+    if not hanzi:
+        return ""
+
+    try:
+        return " ".join(lazy_pinyin(hanzi, style=Style.TONE))
+    except Exception:
+        return ""
+
+def get_effective_pinyin(entry: Entry) -> str:
+    existing = (entry.pinyin or "").strip()
+    if existing:
+        return existing
+
+    return generate_pinyin_from_hanzi(entry.hanzi)
 
 def _has_cyrillic(s: str) -> bool:
     return bool(_CYR_RE.search(s))
@@ -216,7 +237,7 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
             if not hanzi or hanzi in {"-", "—", "_"}:
                 continue
 
-            entry_pinyin_norm = normalize_pinyin(entry.pinyin or "")
+            entry_pinyin_norm = normalize_pinyin(get_effective_pinyin(entry))
             ru_text = (entry.ru or "").strip().lower()
 
             BAD_RU_WORDS = {
@@ -322,12 +343,6 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
     q_cap = q_lower.capitalize()
     q_title = q_lower.title()
 
-    print("DEBUG SEARCH MODE = RU")
-    print("DEBUG q_norm =", q_norm)
-    print("DEBUG q_lower =", q_lower)
-    print("DEBUG q_cap =", q_cap)
-    print("DEBUG q_title =", q_title)
-
     # exact search без lower() в SQL
     exact_sql = text("""
         select id
@@ -354,7 +369,6 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
         },
     )
     exact_ids = [row[0] for row in exact_res.all()]
-    print("DEBUG exact_ids =", exact_ids)
 
     exact_items = []
     if exact_ids:
@@ -372,9 +386,6 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
         exact_items = list(exact_orm_res.scalars().all())
         exact_items = clean_and_deduplicate_entries(exact_items)
 
-    print("DEBUG exact_items_count =", len(exact_items))
-    for item in exact_items[:5]:
-        print("DEBUG exact_item =", item.id, item.hanzi, item.pinyin, item.ru)
 
     if len(exact_items) >= limit:
         return exact_items
@@ -408,7 +419,6 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
         },
     )
     rest_ids = [row[0] for row in rest_res.all()]
-    print("DEBUG rest_ids =", rest_ids)
 
     rest_items = []
     if rest_ids:
@@ -426,9 +436,6 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
         rest_items = list(rest_orm_res.scalars().all())
         rest_items = clean_and_deduplicate_entries(rest_items)
 
-    print("DEBUG rest_items_count =", len(rest_items))
-    for item in rest_items[:5]:
-        print("DEBUG rest_item =", item.id, item.hanzi, item.pinyin, item.ru)
 
     combined = clean_and_deduplicate_entries(exact_items + rest_items)
 
