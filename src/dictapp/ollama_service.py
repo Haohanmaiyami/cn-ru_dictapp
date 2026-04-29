@@ -15,13 +15,15 @@ def build_dictionary_context(entries: list[Entry]) -> str:
     for i, entry in enumerate(entries, start=1):
         pos_part = f" [{entry.pos}]" if entry.pos else ""
         pinyin_part = f" — {entry.pinyin}" if entry.pinyin else ""
-
         ru_part = (entry.ru or "").strip().replace("\n", " ")
+# убираем лишние пробелы
         ru_part = " ".join(ru_part.split())
 
-        if len(ru_part) > 180:
-            ru_part = ru_part[:180] + "..."
+# берём только первое значение (до ;)
+        ru_part = ru_part.split("；")[0]
 
+# жёстко режем длину
+        ru_part = ru_part[:50]
         lines.append(f"{i}. {entry.hanzi}{pinyin_part}{pos_part} — {ru_part}")
 
     return "\n".join(lines)
@@ -35,7 +37,7 @@ def build_analysis_prompt(text: str, dictionary_context: str) -> str:
 Переведи ТОЛЬКО исходное китайское предложение пользователя на русский язык.
 
 ВАЖНО:
-Словарные данные используй только как справку.
+Игнорируй любые словарные данные.
 НЕ копируй из словаря длинные примеры, имена, лишние фразы и старые статьи.
 НЕ добавляй ничего, чего нет в исходном китайском предложении.
 
@@ -67,6 +69,7 @@ def build_analysis_prompt(text: str, dictionary_context: str) -> str:
 - Переводи максимально буквально и просто
 
 ПРИМЕР:
+
 Исходное предложение:
 我昨天给你买的那个东西你还记得吗？
 
@@ -80,29 +83,54 @@ def build_analysis_prompt(text: str, dictionary_context: str) -> str:
 Исходное предложение:
 {text}
 
-Словарные данные:
-{dictionary_context}
 """.strip()
 
 # >>> CHANGE: теперь функция возвращает dict, а не строку
 async def analyze_with_ollama(text: str, dictionary_entries: list[Entry]) -> dict:
-    dictionary_context = build_dictionary_context(dictionary_entries)
-    prompt = build_analysis_prompt(text=text, dictionary_context=dictionary_context)
+    prompt = build_analysis_prompt(text=text, dictionary_context=None)
 
     payload = {
         "model": settings.ollama_model,
         "prompt": prompt,
         "stream": False,
+        "options": {
+            "num_predict": 40,
+            "temperature": 0.1
+        },
+        "stop": ["}"],
     }
 
-    async with httpx.AsyncClient(timeout=90.0) as client:
-        response = await client.post(
-            f"{settings.ollama_base_url}/api/generate",
-            json=payload,
-        )
-        response.raise_for_status()
-        data = response.json()
+    timeout = httpx.Timeout(
+        connect=10.0,
+        read=120.0,
+        write=10.0,
+        pool=10.0,
+    )
 
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(
+                f"{settings.ollama_base_url}/api/generate",
+                json=payload,
+            )
+            response.raise_for_status()
+            data = response.json()
+
+    except httpx.ReadTimeout:
+        return {
+            "literal": "",
+            "natural": "",
+            "pinyin": "",
+            "keywords": [],
+        }
+    except Exception as e:
+        print(f"❌ Ollama error: {e}")
+        return {
+            "literal": "",
+            "natural": "",
+            "pinyin": "",
+            "keywords": [],
+        }
     # >>> CHANGE: раньше возвращали просто текст
     raw_response = (data.get("response") or "").strip()
 
@@ -182,37 +210,25 @@ def extract_cn_translation(raw: str) -> str:
 
 def build_ru_to_cn_prompt(text: str) -> str:
     return f"""
-Ты помощник по китайскому языку для русскоязычного пользователя.
+Ты переводчик с русского на китайский.
 
-ЗАДАЧА:
-Переведи русское предложение на китайский язык.
+Верни СТРОГО валидный JSON без markdown и без текста вокруг:
 
-СТРОГИЕ ПРАВИЛА:
-- Используй ТОЛЬКО упрощённые китайские иероглифы (Simplified Chinese)
-- НЕ используй традиционные иероглифы
-- Пиньинь обязательно с тонами (например: wǒ lèi le)
-- Перевод должен быть естественным и разговорным
-- НЕ добавляй ничего вне шаблона
-- НЕ добавляй пояснения вне блока "Краткий комментарий"
-- Если есть несколько вариантов — выбери ОДИН самый естественный
-- Строка "Пиньинь:" обязательна. Никогда не пропускай её.
-- Даже если фраза короткая, обязательно дай пиньинь для всего китайского перевода.
+{{
+  "translation": "перевод на упрощённом китайском",
+  "comment": "короткий комментарий на русском"
+}}
 
-ФОРМАТ ОТВЕТА (строго соблюдай):
+Правила:
+- translation: только Simplified Chinese и знаки препинания
+- не используй латиницу в translation
+- не используй японский или корейский
+- не добавляй смысл, которого нет в русском тексте
+- comment: одно короткое предложение на русском
 
-Китайский перевод:
-...
-
-Пиньинь:
-...
-
-Краткий комментарий:
-...
-
-Русское предложение:
+Русский текст:
 {text}
 """.strip()
-
 
 async def translate_ru_to_cn_with_ollama(text: str) -> dict:
     prompt = build_ru_to_cn_prompt(text=text)
@@ -223,20 +239,47 @@ async def translate_ru_to_cn_with_ollama(text: str) -> dict:
         "stream": False,
     }
 
-    async with httpx.AsyncClient(timeout=90.0) as client:
-        response = await client.post(
-            f"{settings.ollama_base_url}/api/generate",
-            json=payload,
-        )
-        response.raise_for_status()
-        data = response.json()
+    try:
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            response = await client.post(
+                f"{settings.ollama_base_url}/api/generate",
+                json=payload,
+            )
+            response.raise_for_status()
+            data = response.json()
+
+    except httpx.ReadTimeout:
+        return {
+            "translation": "",
+            "pinyin": "",
+            "comment": "",
+        }
+
+    except Exception as e:
+        print(f"❌ Ollama error: {e}")
+        return {
+            "translation": "",
+            "pinyin": "",
+            "comment": "",
+        }
 
     raw = (data.get("response") or "").strip()
 
-    cn_translation = extract_cn_translation(raw)
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {
+            "translation": raw,
+            "pinyin": "",
+            "comment": "",
+        }
+
+    cn_translation = str(parsed.get("translation", "") or "").strip()
+    comment = str(parsed.get("comment", "") or "").strip()
     generated_pinyin = generate_pinyin(cn_translation)
 
     return {
-        "translation": raw,
+        "translation": cn_translation,
         "pinyin": generated_pinyin,
+        "comment": comment,
     }

@@ -361,21 +361,22 @@ async def import_file(session: AsyncSession, file_path: Path, batch_size: int = 
 
 
 async def main() -> None:
-    data_dir = Path("data")
-    files: list[Path] = []
+    import sys
 
-    files.extend(sorted(data_dir.glob("dabkrs_*.dsl")))
-
-    bruks = data_dir / "dabruks.dsl"
-    if bruks.exists():
-        files.append(bruks)
+    if len(sys.argv) > 1:
+        files = [Path(arg) for arg in sys.argv[1:]]
+    else:
+        data_dir = Path("data")
+        files = []
+        files.extend(sorted(data_dir.glob("dabkrs_*.dsl")))
+        bruks = data_dir / "dabruks.dsl"
+        if bruks.exists():
+            files.append(bruks)
 
     if not files:
-        raise SystemExit("No DSL files found in ./data")
+        raise SystemExit("No DSL files found")
 
     async with AsyncSessionMaker() as session:
-        await truncate_entries(session)
-
         total = 0
         for fp in files:
             print(f"\n== importing {fp.name} ==")

@@ -1,6 +1,10 @@
 from sqladmin import Admin
+import asyncio
+import httpx
+from dictapp.settings import settings
 from dictapp.db import engine
 from dictapp.admin import EntryAdmin
+from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, and_, func, case
@@ -19,7 +23,42 @@ from dictapp.schemas import AITranslateRuToCnRequest, AITranslateRuToCnResponse
 from dictapp.repo import split_ru_examples
 from dictapp.repo import get_effective_pinyin
 
-app = FastAPI(title="Chinese-Russian Dictionary MVP")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("🔥 Starting warmup...")
+
+    async def _warmup():
+        await asyncio.sleep(3)
+        try:
+            async with httpx.AsyncClient(timeout=180.0) as client:
+                await client.post(
+                    f"{settings.ollama_base_url}/api/generate",
+                    json={
+                        "model": settings.ollama_model,
+                        "prompt": "Ответь одним словом: OK",
+                        "stream": False,
+                        "options": {
+                            "num_predict": 5,
+                            "temperature": 0
+                        }
+                    },
+                )
+            print("✅ Ollama warmup done")
+        except Exception as e:
+            print(f"⚠️ Ollama warmup failed: {e}")
+
+    await _warmup()
+
+    yield
+
+app = FastAPI(
+    title="Chinese-Russian Dictionary MVP",
+    lifespan=lifespan,
+)
+
+
 app.mount("/static", StaticFiles(directory="src/dictapp/static"), name="static")
 
 templates = Jinja2Templates(directory="src/dictapp/templates")
