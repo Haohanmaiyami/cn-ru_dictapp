@@ -36,4 +36,4 @@ data/
 
 
 *.pyc
-*.log
+*.log*.swp
