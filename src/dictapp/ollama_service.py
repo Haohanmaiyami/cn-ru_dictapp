@@ -252,10 +252,22 @@ async def translate_ru_to_cn_with_ollama(text: str) -> dict:
         "prompt": prompt,
         "keep_alive": "30m",
         "stream": False,
+        "options": {
+            "num_predict": 120,
+            "temperature": 0.1,
+            "num_ctx": 1024
+        },
     }
 
+    timeout = httpx.Timeout(
+        connect=10.0,
+        read=300.0,
+        write=10.0,
+        pool=10.0,
+    )
+
     try:
-        async with httpx.AsyncClient(timeout=180.0) as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(
                 f"{settings.ollama_base_url}/api/generate",
                 json=payload,
@@ -306,15 +318,32 @@ async def warmup_ollama():
                 f"{settings.ollama_base_url}/api/generate",
                 json={
                     "model": settings.ollama_model,
-                    "prompt": "OK",
+                    "prompt": "Переведи на русский строго JSON: 你好",
                     "stream": False,
                     "keep_alive": "30m",
                     "options": {
-                        "num_predict": 1,
-                        "temperature": 0
+                        "num_predict": 30,
+                        "temperature": 0.1,
+                        "num_ctx": 1024
                     },
                 },
             )
+
+            await client.post(
+                f"{settings.ollama_base_url}/api/generate",
+                json={
+                    "model": settings.ollama_model,
+                    "prompt": "Переведи на китайский строго JSON: Я хочу пить воду",
+                    "stream": False,
+                    "keep_alive": "30m",
+                    "options": {
+                        "num_predict": 30,
+                        "temperature": 0.1,
+                        "num_ctx": 1024
+                    },
+                },
+            )
+
         print("🔥 Ollama warmed up")
     except Exception as e:
         print(f"❌ Warmup failed: {e}")
