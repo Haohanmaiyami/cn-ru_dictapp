@@ -1,5 +1,5 @@
 name dictionaryuser
-password kaishi123
+password kaishi123 password in docker same
 database dictionarydb
 owner dictionaryuser
 
@@ -19,3 +19,5 @@ poetry run alembic upgrade head
 ```
 
 back to normal
+
+

@@ -15,24 +15,93 @@
         <div class="card-body">
           <h1 class="display-6 mb-2">{{ entry.hanzi }}</h1>
 
+
+
           {% if entry.pinyin %}
-            <div class="mb-2"><span class="badge text-bg-light">{{ entry.pinyin }}</span></div>
+            <div class="mb-2">
+              <span class="badge text-bg-light">{{ entry.pinyin }}</span>
+            </div>
           {% endif %}
 
           {% if entry.pos %}
-            <div class="mb-3"><span class="badge text-bg-secondary">{{ entry.pos }}</span></div>
+            <div class="mb-3">
+              <span class="badge text-bg-secondary">{{ entry.pos }}</span>
+            </div>
           {% endif %}
 
           <h2 class="h6 text-muted">Перевод</h2>
-          <p class="mb-3">{{ entry.ru }}</p>
+          <p style="white-space: pre-wrap; line-height: 1.6;">
+            {{ entry.ru }}
+          </p>
 
           {% if entry.examples %}
             <h2 class="h6 text-muted">Примеры</h2>
-            <p class="mb-0">{{ entry.examples }}</p>
+            <p class="mb-0" style="white-space: pre-wrap; line-height: 1.6;">
+              {{ entry.examples | safe }}
+            </p>
           {% endif %}
+
+          <div class="mt-4">
+            <h2 class="h6 text-muted">Порядок черт</h2>
+
+            <div id="stroke-target" style="
+                width:220px;
+                height:220px;
+                border:1px solid #ddd;
+                border-radius:10px;
+                background:white;
+                margin-bottom:10px;
+            "></div>
+
+            <button class="btn btn-sm btn-outline-primary" id="animate-btn" type="button">
+              Показать анимацию
+            </button>
+
+            <button class="btn btn-sm btn-outline-secondary" id="loop-btn" type="button">
+              Повторить
+            </button>
+          </div>
         </div>
       </div>
 
     </div>
   </div>
-{% endblock %}
+
+  <script src="https://cdn.jsdelivr.net/npm/hanzi-writer@3.7/dist/hanzi-writer.min.js"></script>
+
+  <script>
+    const hanziText = {{ entry.hanzi | tojson }};
+
+    function extractFirstHanzi(text) {
+      const match = text.match(/[\u3400-\u9FFF]/);
+      return match ? match[0] : null;
+    }
+
+    const firstChar = extractFirstHanzi(hanziText);
+    let writer = null;
+
+    if (firstChar && window.HanziWriter) {
+      writer = HanziWriter.create("stroke-target", firstChar, {
+        width: 220,
+        height: 220,
+        padding: 10,
+        showOutline: true,
+        showCharacter: false,
+        strokeAnimationSpeed: 1,
+        delayBetweenStrokes: 200,
+      });
+    }
+
+    document.getElementById("animate-btn").addEventListener("click", function () {
+      if (writer) {
+        writer.animateCharacter();
+      }
+    });
+
+    document.getElementById("loop-btn").addEventListener("click", function () {
+      if (writer) {
+        writer.loopCharacterAnimation();
+      }
+    });
+  </script>
+{% endblock %}>

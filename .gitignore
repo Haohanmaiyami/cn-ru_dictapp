@@ -32,3 +32,8 @@ htmlcov/
 
 data/
 *.dsl
+
+
+
+*.pyc
+*.log*.swp
