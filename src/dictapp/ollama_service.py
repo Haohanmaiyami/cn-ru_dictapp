@@ -290,4 +290,23 @@ async def translate_ru_to_cn_with_ollama(text: str) -> dict:
         "comment": comment,
     }
 
+async def warmup_ollama():
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            await client.post(
+                f"{settings.ollama_base_url}/api/generate",
+                json={
+                    "model": settings.ollama_model,
+                    "prompt": "OK",
+                    "stream": False,
+                    "keep_alive": "30m",
+                    "options": {
+                        "num_predict": 1,
+                        "temperature": 0
+                    },
+                },
+            )
+        print("🔥 Ollama warmed up")
+    except Exception as e:
+        print(f"❌ Warmup failed: {e}")
 
