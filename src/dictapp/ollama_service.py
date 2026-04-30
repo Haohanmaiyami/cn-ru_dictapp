@@ -1,9 +1,10 @@
 import json
-
+import asyncio
 import httpx
 from dictapp.models import Entry
 from dictapp.settings import settings
 from pypinyin import Style, lazy_pinyin
+ollama_lock = asyncio.Lock()
 
 
 def build_dictionary_context(entries: list[Entry]) -> str:
@@ -93,6 +94,7 @@ async def analyze_with_ollama(text: str, dictionary_entries: list[Entry]) -> dic
         "model": settings.ollama_model,
         "prompt": prompt,
         "stream": False,
+        "keep_alive": "30m",
         "options": {
             "num_predict": 40,
             "temperature": 0.1
@@ -108,13 +110,14 @@ async def analyze_with_ollama(text: str, dictionary_entries: list[Entry]) -> dic
     )
 
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(
-                f"{settings.ollama_base_url}/api/generate",
-                json=payload,
-            )
-            response.raise_for_status()
-            data = response.json()
+        async with ollama_lock:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(
+                    f"{settings.ollama_base_url}/api/generate",
+                    json=payload,
+                )
+                response.raise_for_status()
+                data = response.json()
 
     except httpx.ReadTimeout:
         return {
@@ -185,6 +188,7 @@ async def analyze_with_ollama(text: str, dictionary_entries: list[Entry]) -> dic
         "keywords": keywords,
     }
 
+
 def generate_pinyin(text: str) -> str:
     if not text:
         return ""
@@ -236,17 +240,19 @@ async def translate_ru_to_cn_with_ollama(text: str) -> dict:
     payload = {
         "model": settings.ollama_model,
         "prompt": prompt,
+        "keep_alive": "30m",
         "stream": False,
     }
 
     try:
-        async with httpx.AsyncClient(timeout=180.0) as client:
-            response = await client.post(
-                f"{settings.ollama_base_url}/api/generate",
-                json=payload,
-            )
-            response.raise_for_status()
-            data = response.json()
+        async with ollama_lock:
+            async with httpx.AsyncClient(timeout=180.0) as client:
+                response = await client.post(
+                    f"{settings.ollama_base_url}/api/generate",
+                    json=payload,
+                )
+                response.raise_for_status()
+                data = response.json()
 
     except httpx.ReadTimeout:
         return {
@@ -283,3 +289,5 @@ async def translate_ru_to_cn_with_ollama(text: str) -> dict:
         "pinyin": generated_pinyin,
         "comment": comment,
     }
+
+
