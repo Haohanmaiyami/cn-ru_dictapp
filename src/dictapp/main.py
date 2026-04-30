@@ -22,20 +22,14 @@ from dictapp.repo import split_ru_examples
 from dictapp.repo import get_effective_pinyin
 from dictapp.ollama_service import warmup_ollama
 
-
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    print("🔥 Starting warmup...")
-    await warmup_ollama()
-    yield
-
 app = FastAPI(
     title="Chinese-Russian Dictionary MVP",
-    lifespan=lifespan,
 )
 
+@app.on_event("startup")
+async def startup_event():
+    print("🔥 Startup warmup...")
+    await warmup_ollama()
 
 app.mount("/static", StaticFiles(directory="src/dictapp/static"), name="static")
 
