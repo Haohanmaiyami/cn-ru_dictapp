@@ -21,6 +21,7 @@ from dictapp.schemas import AITranslateRuToCnRequest, AITranslateRuToCnResponse
 from dictapp.repo import split_ru_examples
 from dictapp.repo import get_effective_pinyin
 from dictapp.ollama_service import warmup_ollama
+import sys
 
 app = FastAPI(
     title="Chinese-Russian Dictionary MVP",
@@ -28,8 +29,10 @@ app = FastAPI(
 
 @app.on_event("startup")
 async def startup_event():
-    print("🔥 Startup warmup...")
+    print("🔥 Startup warmup...", flush=True)
+    sys.stdout.flush()
     await warmup_ollama()
+    print("🔥 DONE", flush=True)
 
 app.mount("/static", StaticFiles(directory="src/dictapp/static"), name="static")
 
