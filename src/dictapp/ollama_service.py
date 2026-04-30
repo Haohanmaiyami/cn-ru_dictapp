@@ -4,7 +4,7 @@ import httpx
 from dictapp.models import Entry
 from dictapp.settings import settings
 from pypinyin import Style, lazy_pinyin
-ollama_lock = asyncio.Lock()
+
 
 
 def build_dictionary_context(entries: list[Entry]) -> str:
@@ -86,9 +86,26 @@ def build_analysis_prompt(text: str, dictionary_context: str) -> str:
 
 """.strip()
 
-# >>> CHANGE: теперь функция возвращает dict, а не строку
 async def analyze_with_ollama(text: str, dictionary_entries: list[Entry]) -> dict:
-    prompt = build_analysis_prompt(text=text, dictionary_context=None)
+    # 🔥 быстрый ответ БЕЗ Ollama
+    simple_translations = {
+        "你好": ("Привет", "Здравствуйте", ["你好"]),
+        "谢谢": ("Спасибо", "Спасибо", ["谢谢"]),
+        "对不起": ("Извините", "Извините", ["对不起"]),
+        "再见": ("До свидания", "До свидания", ["再见"]),
+    }
+
+    if text.strip() in simple_translations:
+        literal, natural, keywords = simple_translations[text.strip()]
+        return {
+            "literal": literal,
+            "natural": natural,
+            "pinyin": " ".join(lazy_pinyin(text, style=Style.TONE)),
+            "keywords": keywords,
+        }
+
+    # ⬇️ только если не простой кейс — идём в Ollama
+    prompt = build_analysis_prompt(text=text, dictionary_context="")
 
     payload = {
         "model": settings.ollama_model,
@@ -96,21 +113,21 @@ async def analyze_with_ollama(text: str, dictionary_entries: list[Entry]) -> dic
         "stream": False,
         "keep_alive": "30m",
         "options": {
-            "num_predict": 40,
-            "temperature": 0.1
+            "num_predict": 120,
+            "temperature": 0.1,
+            "num_ctx": 1024
         },
-        "stop": ["}"],
     }
 
     timeout = httpx.Timeout(
         connect=10.0,
-        read=120.0,
+        read=300.0,
         write=10.0,
         pool=10.0,
     )
 
-    try:
-        async with ollama_lock:
+    for attempt in range(2):
+        try:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 response = await client.post(
                     f"{settings.ollama_base_url}/api/generate",
@@ -118,26 +135,29 @@ async def analyze_with_ollama(text: str, dictionary_entries: list[Entry]) -> dic
                 )
                 response.raise_for_status()
                 data = response.json()
+            break
 
-    except httpx.ReadTimeout:
-        return {
-            "literal": "",
-            "natural": "",
-            "pinyin": "",
-            "keywords": [],
-        }
-    except Exception as e:
-        print(f"❌ Ollama error: {e}")
-        return {
-            "literal": "",
-            "natural": "",
-            "pinyin": "",
-            "keywords": [],
-        }
-    # >>> CHANGE: раньше возвращали просто текст
+        except httpx.ReadTimeout:
+            print(f"⏳ Timeout, retry {attempt + 1}")
+            if attempt == 1:
+                return {
+                    "literal": "",
+                    "natural": "",
+                    "pinyin": "",
+                    "keywords": [],
+                }
+
+        except Exception as e:
+            print(f"❌ Ollama error: {e}")
+            return {
+                "literal": "",
+                "natural": "",
+                "pinyin": "",
+                "keywords": [],
+            }
+
     raw_response = (data.get("response") or "").strip()
 
-    # >>> CHANGE: пытаемся распарсить JSON
     try:
         parsed = json.loads(raw_response)
     except json.JSONDecodeError:
@@ -152,16 +172,6 @@ async def analyze_with_ollama(text: str, dictionary_entries: list[Entry]) -> dic
     natural = str(parsed.get("natural", "") or "").strip()
     pinyin = " ".join(lazy_pinyin(text, style=Style.TONE))
     keywords = parsed.get("keywords", []) or []
-
-    simple_translations = {
-        "你好": ("Привет", "Здравствуйте", ["你好"]),
-        "谢谢": ("Спасибо", "Спасибо", ["谢谢"]),
-        "对不起": ("Извините", "Извините", ["对不起"]),
-        "再见": ("До свидания", "До свидания", ["再见"]),
-    }
-
-    if text.strip() in simple_translations:
-        literal, natural, keywords = simple_translations[text.strip()]
 
     def has_chinese(value: str) -> bool:
         return any("\u3400" <= ch <= "\u9fff" for ch in value)
@@ -245,14 +255,13 @@ async def translate_ru_to_cn_with_ollama(text: str) -> dict:
     }
 
     try:
-        async with ollama_lock:
-            async with httpx.AsyncClient(timeout=180.0) as client:
-                response = await client.post(
-                    f"{settings.ollama_base_url}/api/generate",
-                    json=payload,
-                )
-                response.raise_for_status()
-                data = response.json()
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            response = await client.post(
+                f"{settings.ollama_base_url}/api/generate",
+                json=payload,
+            )
+            response.raise_for_status()
+            data = response.json()
 
     except httpx.ReadTimeout:
         return {

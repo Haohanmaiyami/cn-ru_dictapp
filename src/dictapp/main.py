@@ -1,6 +1,4 @@
 from sqladmin import Admin
-import asyncio
-import httpx
 from dictapp.settings import settings
 from dictapp.db import engine
 from dictapp.admin import EntryAdmin
@@ -23,6 +21,8 @@ from dictapp.schemas import AITranslateRuToCnRequest, AITranslateRuToCnResponse
 from dictapp.repo import split_ru_examples
 from dictapp.repo import get_effective_pinyin
 from dictapp.ollama_service import warmup_ollama
+
+
 
 
 @asynccontextmanager
