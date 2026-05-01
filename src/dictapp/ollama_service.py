@@ -109,12 +109,7 @@ async def analyze_with_ollama(text: str, dictionary_entries: list[Entry]) -> dic
 
     payload = {
         "model": settings.ollama_model,
-        "messages": [
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
+        "prompt": prompt,
         "stream": False,
         "keep_alive": "30m",
         "options": {
@@ -135,7 +130,7 @@ async def analyze_with_ollama(text: str, dictionary_entries: list[Entry]) -> dic
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 response = await client.post(
-                    f"{settings.ollama_base_url}/api/chat",
+                    f"{settings.ollama_base_url}/api/generate",
                     json=payload,
                 )
                 response.raise_for_status()
@@ -161,7 +156,7 @@ async def analyze_with_ollama(text: str, dictionary_entries: list[Entry]) -> dic
                 "keywords": [],
             }
 
-    raw_response = (data.get("message", {}).get("content") or "").strip()
+    raw_response = (data.get("response") or "").strip()
 
     try:
         parsed = json.loads(raw_response)
@@ -254,12 +249,7 @@ async def translate_ru_to_cn_with_ollama(text: str) -> dict:
 
     payload = {
         "model": settings.ollama_model,
-        "messages": [
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
+        "prompt": prompt,
         "stream": False,
         "keep_alive": "30m",
         "options": {
@@ -279,7 +269,7 @@ async def translate_ru_to_cn_with_ollama(text: str) -> dict:
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(
-                f"{settings.ollama_base_url}/api/chat",
+                f"{settings.ollama_base_url}/api/generate",
                 json=payload,
             )
             response.raise_for_status()
@@ -300,7 +290,7 @@ async def translate_ru_to_cn_with_ollama(text: str) -> dict:
             "comment": "",
         }
 
-    raw_response = (data.get("message", {}).get("content") or "").strip()
+    raw_response = (data.get("response") or "").strip()
 
     try:
         parsed = json.loads(raw_response)
@@ -325,12 +315,10 @@ async def warmup_ollama():
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             await client.post(
-                f"{settings.ollama_base_url}/api/chat",
+                f"{settings.ollama_base_url}/api/generate",
                 json={
                     "model": settings.ollama_model,
-                    "messages": [
-                    {"role": "user", "content": "Переведи на русский строго JSON: 你好"}
-                    ],
+                    "prompt": "Переведи на русский строго JSON: 你好",
                     "stream": False,
                     "keep_alive": "30m",
                     "options": {
@@ -342,12 +330,10 @@ async def warmup_ollama():
             )
 
             await client.post(
-                f"{settings.ollama_base_url}/api/chat",
+                f"{settings.ollama_base_url}/api/generate",
                 json={
                     "model": settings.ollama_model,
-                    "messages": [
-                    {"role": "user", "content": "Переведи на китайский строго JSON: Я хочу пить воду"}
-                    ],
+                    "prompt": "Переведи на китайский строго JSON: Я хочу пить воду",
                     "stream": False,
                     "keep_alive": "30m",
                     "options": {
