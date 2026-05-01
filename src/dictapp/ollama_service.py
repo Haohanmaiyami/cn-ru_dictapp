@@ -113,9 +113,9 @@ async def analyze_with_ollama(text: str, dictionary_entries: list[Entry]) -> dic
         "stream": False,
         "keep_alive": "30m",
         "options": {
-            "num_predict": 120,
+            "num_predict": 60,
             "temperature": 0.1,
-            "num_ctx": 1024
+            "num_ctx": 512
         },
     }
 
@@ -253,9 +253,9 @@ async def translate_ru_to_cn_with_ollama(text: str) -> dict:
         "keep_alive": "30m",
         "stream": False,
         "options": {
-            "num_predict": 120,
+            "num_predict": 60,
             "temperature": 0.1,
-            "num_ctx": 1024
+            "num_ctx": 512
         },
     }
 

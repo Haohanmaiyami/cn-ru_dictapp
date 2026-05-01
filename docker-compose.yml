@@ -35,7 +35,7 @@ services:
     ports:
       - "11434:11434"
     volumes:
-      - /root/.ollama:/root/.ollama
+      - ollama_data:/root/.ollama
     restart: always
 
 volumes:
