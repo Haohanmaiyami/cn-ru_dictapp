@@ -142,13 +142,23 @@ async def analyze_with_ollama(text: str, dictionary_entries: list[Entry]) -> dic
 
     try:
         parsed = json.loads(raw_response)
+
     except json.JSONDecodeError:
-        return {
-            "literal": "",
-            "natural": raw_response,
-            "pinyin": "",
-            "keywords": [],
-        }
+        # >>> CHANGE: пытаемся вытащить JSON вручную
+        try:
+            start = raw_response.find("{")
+            end = raw_response.rfind("}") + 1
+            cleaned = raw_response[start:end]
+
+            parsed = json.loads(cleaned)
+
+        except Exception:
+            return {
+                "literal": "",
+                "natural": "",
+                "pinyin": "",
+                "keywords": [],
+            }
 
     literal = str(parsed.get("literal", "") or "").strip()
     natural = str(parsed.get("natural", "") or "").strip()
