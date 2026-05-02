@@ -73,7 +73,7 @@ async def analyze_with_ollama(text: str, dictionary_entries: list[Entry]) -> dic
         }
 
     # ⬇️ только если не простой кейс — идём в Ollama
-    prompt = build_analysis_prompt(text=text, dictionary_context="")
+    prompt = build_analysis_prompt(text=text)
 
     payload = {
         "model": settings.ollama_model,
