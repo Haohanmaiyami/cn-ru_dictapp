@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     db_password: str
 
     ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "qwen2:1.5b"
+    ollama_model: str = "qwen3:4b-instruct"
 
     @property
     def database_url(self) -> str:
