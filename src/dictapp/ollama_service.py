@@ -139,6 +139,7 @@ async def analyze_with_ollama(text: str, dictionary_entries: list[Entry]) -> dic
             }
 
     raw_response = (data.get("response") or "").strip()
+    print("RAW CN_RU OLLAMA RESPONSE:", raw_response, flush=True)
 
     try:
         parsed = json.loads(raw_response)
