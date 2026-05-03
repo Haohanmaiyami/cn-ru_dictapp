@@ -295,10 +295,14 @@ async def translate_ru_to_cn_with_ollama(text: str) -> dict:
 
     try:
         parsed = json.loads(raw_response)
+
     except json.JSONDecodeError:
+        cn_translation = clean_chinese(raw_response)
+        generated_pinyin = generate_pinyin(cn_translation)
+
         return {
-            "translation": raw_response,
-            "pinyin": "",
+            "translation": cn_translation,
+            "pinyin": generated_pinyin,
             "comment": "",
         }
 
