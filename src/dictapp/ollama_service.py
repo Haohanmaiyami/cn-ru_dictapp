@@ -1,11 +1,13 @@
 import json
 import asyncio
 import httpx
+import re
 from dictapp.models import Entry
 from dictapp.settings import settings
 from pypinyin import Style, lazy_pinyin
 
-
+def clean_chinese(text: str) -> str:
+    return "".join(re.findall(r'[\u4e00-\u9fff]+', text))
 
 def build_dictionary_context(entries: list[Entry]) -> str:
     if not entries:
@@ -302,6 +304,14 @@ async def translate_ru_to_cn_with_ollama(text: str) -> dict:
 
     cn_translation = str(parsed.get("translation", "") or "").strip()
     comment = str(parsed.get("comment", "") or "").strip()
+
+    # fallback если модель вернула пусто или мусор
+    if not cn_translation:
+        cn_translation = raw_response.strip()
+
+    # оставляем только китайские иероглифы
+    cn_translation = clean_chinese(cn_translation)
+
     generated_pinyin = generate_pinyin(cn_translation)
 
     return {
