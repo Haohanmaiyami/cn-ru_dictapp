@@ -16,7 +16,11 @@ def is_valid_hanzi_word(h: str) -> bool:
     if len(h) < 2:
         return False
 
-    BAD = {"的", "了", "那", "这个", "那个", "的那", "的是", "的话"}
+    BAD = {
+        "的", "了", "那", "这个", "那个",
+        "的那", "的是", "的话",
+        "个是", "是太", "的是太",
+    }
 
     if h in BAD:
         return False
@@ -130,9 +134,32 @@ def normalize_query(q: str) -> str:
         return ""
     return " ".join(q.strip().split())
 
+def _entry_quality_score(entry: Entry) -> int:
+    ru = (entry.ru or "").strip()
+    examples = getattr(entry, "examples", None) or ""
+
+    score = 0
+
+    if ru:
+        score += 10
+
+    if examples:
+        score += 30
+
+    if any("\u3400" <= ch <= "\u9fff" for ch in ru):
+        score += 20
+
+    if len(ru) > 80:
+        score += 10
+
+    if ";" in ru or "；" in ru:
+        score += 5
+
+    return score
+
+
 def clean_and_deduplicate_entries(entries: list[Entry]) -> list[Entry]:
-    seen: set[str] = set()
-    cleaned: list[Entry] = []
+    by_hanzi: dict[str, Entry] = {}
 
     for e in entries:
         hanzi = (e.hanzi or "").strip()
@@ -142,22 +169,22 @@ def clean_and_deduplicate_entries(entries: list[Entry]) -> list[Entry]:
         if hanzi in {"-", "—", "_"}:
             continue
 
-        # Совсем пустой мусор не пропускаем
         if not hanzi and not ru and not pinyin:
             continue
 
-        # Для словарной статьи hanzi должен быть
         if not hanzi:
             continue
 
-        # Убираем дубли по hanzi
-        if hanzi in seen:
+        current = by_hanzi.get(hanzi)
+
+        if current is None:
+            by_hanzi[hanzi] = e
             continue
 
-        seen.add(hanzi)
-        cleaned.append(e)
+        if _entry_quality_score(e) > _entry_quality_score(current):
+            by_hanzi[hanzi] = e
 
-    return cleaned
+    return list(by_hanzi.values())
 
 def _extract_only_cjk(text: str) -> str:
     return "".join(_CJK_RE.findall(text or ""))
@@ -386,9 +413,9 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
         exact_items = list(exact_orm_res.scalars().all())
         exact_items = clean_and_deduplicate_entries(exact_items)
 
-
     if len(exact_items) >= limit:
-        return exact_items
+        combined = clean_and_deduplicate_entries(exact_items)
+        return combined[:limit]
 
     # CHANGE: русский partial search делаем полностью case-insensitive
     rest_sql = text("""
@@ -443,7 +470,7 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
     # CHANGE: умный ranking русского
     # =========================
     # CHANGE: финальный ranking для русского
-    def ru_rank(entry: Entry) -> tuple[int, int, int, int, int, int, int]:
+    def ru_rank(entry: Entry) -> tuple[int, int, int, int, int, int, int, int]:
         ru_text = (entry.ru or "").strip().lower()
 
         ru_exact_word_bonus = 0
@@ -509,7 +536,7 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
 
         # новое: если в переводе есть китайский текст, это часто длинная статья/пример
         if any("\u3400" <= ch <= "\u9fff" for ch in ru_text):
-            penalty += 4
+            penalty += 1
 
         # новое: если есть вопросительные/восклицательные куски, часто это пример, а не базовый перевод
         if "?" in ru_text or "!" in ru_text:
@@ -529,6 +556,10 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
 
         common_ru_bonus = 0
 
+        examples_bonus = 0
+        if getattr(entry, "examples", None):
+            examples_bonus = -10
+
         if hanzi_text in {"中国", "男人", "女人", "喜欢"}:
             common_ru_bonus = -20
 
@@ -539,6 +570,7 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
             rank,
             ru_exact_word_bonus,
             common_ru_bonus,
+            examples_bonus,
             hanzi_priority,
             penalty,
             ru_len_priority,
@@ -555,37 +587,24 @@ def split_ru_examples(text: str) -> tuple[str, str]:
     if not text:
         return "", ""
 
-    import re
-
-    # 1. убрать HTML
     text = re.sub(r"<.*?>", "", text)
-
-    # 2. нормализовать
-    text = " ".join(text.split())
-    # 2.1 убрать служебные "_" в начале
+    text = text.replace("\\n", "\n")
     text = re.sub(r"^_+\s*", "", text)
     text = re.sub(r"\s*_\s*", " ", text)
+    text = "\n".join(line.strip() for line in text.splitlines() if line.strip())
     text = " ".join(text.split())
 
-    # 3. найти первое китайское предложение
-    match = re.search(r"(.+?)([\u4e00-\u9fff].+)", text)
+    example_pattern = re.compile(r"([\u4e00-\u9fff][^。！？!?]*[。！？!?]?)")
 
-    if match:
-        translation = match.group(1).strip()
-        rest = match.group(2).strip()
-    else:
-        return text, ""
+    examples = example_pattern.findall(text)
 
-    # 4. разбить rest на предложения
-    sentences = re.split(r"[。！？]", rest)
+    translation = example_pattern.sub("", text)
+    translation = " ".join(translation.split())
 
-    examples = []
-    for s in sentences:
-        s = s.strip()
-        if re.search(r"[\u4e00-\u9fff]", s):
-            examples.append(s)
+    translation = re.sub(r"\s+", " ", translation).strip()
+    examples_text = "\n".join(" ".join(e.split()) for e in examples).strip()
 
-    return translation, "\n".join(examples)
+    return translation, examples_text
 
 async def get_entry_by_id(session: AsyncSession, entry_id: int) -> Entry | None:
     stmt = select(Entry).where(Entry.id == entry_id)

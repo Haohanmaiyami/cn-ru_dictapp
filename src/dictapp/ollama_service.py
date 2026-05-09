@@ -56,8 +56,9 @@ def build_analysis_prompt(text: str) -> str:
 - НЕ начинай перевод со слов "То вещь"
 - Если есть 那个东西, переводи как "ту вещь" или "то, что"
 - Для сложных предложений natural должен звучать как обычный русский
-- keywords не должны быть местоимениями вроде 我, 你
-- keywords должны быть цельными выражениями, например 给你买, 那个东西, 还记得
+- keywords не должны быть местоимениями и служебными словами: 我, 你, 这个, 那个, 是, 的, 了, 太, 不
+- keywords должны быть смысловыми словами из текста: например 不简单, 简单, 记得, 买东西
+- keywords должны быть цельными смысловыми выражениями, например 不简单, 简单, 还记得, 买东西
 
 Пример:
 
@@ -68,7 +69,7 @@ def build_analysis_prompt(text: str) -> str:
 {{
   "literal": "Ты ещё помнишь ту вещь, которую я вчера купил тебе?",
   "natural": "Ты помнишь то, что я купил тебе вчера?",
-  "keywords": ["昨天", "给你买", "那个东西", "还记得"]
+  "keywords": ["昨天", "买东西", "还记得"]
 }}
 
 Китайский текст:
@@ -190,6 +191,63 @@ async def analyze_with_ollama(text: str, dictionary_entries: list[Entry]) -> dic
 
     if not literal and natural:
         literal = natural
+
+    BAD_KEYWORDS = {
+        "我", "你", "他", "她", "它", "们",
+        "这个", "那个", "这些", "那些",
+        "是", "了", "的", "得", "地",
+        "太", "很", "不", "吗", "呢", "啊",
+    }
+
+    clean_keywords = []
+
+    for word in keywords:
+        word = str(word).strip()
+
+        if not word:
+            continue
+
+        if word in BAD_KEYWORDS:
+            continue
+
+        if len(word) < 2:
+            continue
+
+        if not any("\u3400" <= ch <= "\u9fff" for ch in word):
+            continue
+
+        clean_keywords.append(word)
+
+    for entry in dictionary_entries:
+        hanzi = (entry.hanzi or "").strip()
+        ru = (entry.ru or "").strip()
+
+        if not hanzi:
+            continue
+
+        if hanzi in BAD_KEYWORDS:
+            continue
+
+        if len(hanzi) < 2:
+            continue
+
+        if ru == "_" or ru.startswith("_"):
+            continue
+
+        if hanzi in {"个是", "的是", "的是太", "这个", "是太"}:
+            continue
+
+        if hanzi not in clean_keywords:
+            clean_keywords.append(hanzi)
+
+    keywords = clean_keywords[:8]
+
+    if not keywords:
+        keywords = [
+            (entry.hanzi or "").strip()
+            for entry in dictionary_entries
+            if (entry.hanzi or "").strip()
+        ][:8]
 
     return {
         "literal": literal,
