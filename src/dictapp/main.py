@@ -1,11 +1,8 @@
 from sqladmin import Admin
-from dictapp.settings import settings
 from dictapp.db import engine
 from dictapp.admin import EntryAdmin
-from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_, and_, func, case
 from dictapp.db import get_session
 from dictapp.repo import get_entry_by_id, search_entries
 from dictapp.repo import find_dictionary_hits_for_text

@@ -36,4 +36,7 @@ data/
 
 
 *.pyc
-*.log*.swp
+*.log
+*.swp
+
+.mypy_cache/
