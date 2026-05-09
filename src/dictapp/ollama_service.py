@@ -1,9 +1,13 @@
 import json
 import httpx
+import time
 import re
 from dictapp.models import Entry
 from dictapp.settings import settings
 from pypinyin import Style, lazy_pinyin
+
+AI_CACHE = {}
+CACHE_TTL = 60 * 60
 
 def clean_chinese(text: str) -> str:
     return "".join(re.findall(r'[\u4e00-\u9fff]+', text))
@@ -76,6 +80,16 @@ def build_analysis_prompt(text: str) -> str:
 """.strip()
 
 async def analyze_with_ollama(text: str, dictionary_entries: list[Entry]) -> dict:
+    cache_key = ("cn_ru", text.strip())
+
+    cached = AI_CACHE.get(cache_key)
+
+    if cached:
+        result, timestamp = cached
+
+        if time.time() - timestamp < CACHE_TTL:
+            print("⚡ CN_RU CACHE HIT")
+            return result
     # 🔥 быстрый ответ БЕЗ Ollama
     simple_translations = {
         "你好": ("Привет", "Здравствуйте", ["你好"]),
@@ -247,12 +261,16 @@ async def analyze_with_ollama(text: str, dictionary_entries: list[Entry]) -> dic
             if (entry.hanzi or "").strip()
         ][:8]
 
-    return {
+    result = {
         "literal": literal,
         "natural": natural,
         "pinyin": pinyin,
         "keywords": keywords,
     }
+
+    AI_CACHE[cache_key] = (result, time.time())
+
+    return result
 
 
 def generate_pinyin(text: str) -> str:
