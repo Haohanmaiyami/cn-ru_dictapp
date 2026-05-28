@@ -214,32 +214,69 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
     q_like = _escape_like(q)
 
     # =========================
-    # 1) Поиск по иероглифам
+    # 1) Быстрый поиск по иероглифам
     # =========================
     if _has_cjk(q):
-        hanzi_rank = case(
-            (Entry.hanzi == q, 0),
-            (Entry.hanzi.ilike(f"{q_like}%", escape="\\"), 1),
-            (Entry.hanzi.ilike(f"%{q_like}%", escape="\\"), 2),
-            else_=100,
-        ).label("hanzi_rank")
 
-        stmt = (
+        # сначала exact search
+        # Это самый быстрый вариант: Entry.hanzi == q
+        # Например, для 难听 сначала ищем именно 难听
+        exact_stmt = (
             select(Entry)
-            .where(Entry.hanzi.is_not(None))
-            .where(func.btrim(Entry.hanzi) != "")
-            .where(Entry.hanzi.ilike(f"%{q_like}%", escape="\\"))
-            .order_by(hanzi_rank, func.length(Entry.hanzi), Entry.id)
+            .where(Entry.hanzi == q)
+            .order_by(Entry.id)
             .limit(limit)
         )
 
-        res = await session.execute(stmt)
-        results = list(res.scalars().all())
-        results = clean_and_deduplicate_entries(results)
-        return results[:limit]
+        exact_res = await session.execute(exact_stmt)
+        exact_items = clean_and_deduplicate_entries(list(exact_res.scalars().all()))
+
+        if len(exact_items) >= limit:
+            return exact_items[:limit]
+
+        # потом prefix search
+        # Например: 难听%
+        # Это быстрее и полезнее, чем сразу искать %难听%
+        prefix_stmt = (
+            select(Entry)
+            .where(Entry.hanzi.is_not(None))
+            .where(func.btrim(Entry.hanzi) != "")
+            .where(Entry.hanzi != q)
+            .where(Entry.hanzi.ilike(f"{q_like}%", escape="\\"))
+            .order_by(func.length(Entry.hanzi), Entry.id)
+            .limit(max(50, limit * 3))
+        )
+
+        prefix_res = await session.execute(prefix_stmt)
+        prefix_items = clean_and_deduplicate_entries(list(prefix_res.scalars().all()))
+
+        combined = clean_and_deduplicate_entries(exact_items + prefix_items)
+
+        if len(combined) >= limit:
+            return combined[:limit]
+
+        # contains search делаем только после exact + prefix
+        # И только если запрос 2+ иероглифа.
+        # Для одного иероглифа %字% может быть очень тяжелым на базе 6M+ строк.
+        if len(q) >= 2:
+            contains_stmt = (
+                select(Entry)
+                .where(Entry.hanzi.is_not(None))
+                .where(func.btrim(Entry.hanzi) != "")
+                .where(Entry.hanzi.ilike(f"%{q_like}%", escape="\\"))
+                .order_by(func.length(Entry.hanzi), Entry.id)
+                .limit(max(50, limit * 3))
+            )
+
+            contains_res = await session.execute(contains_stmt)
+            contains_items = clean_and_deduplicate_entries(list(contains_res.scalars().all()))
+
+            combined = clean_and_deduplicate_entries(combined + contains_items)
+
+        return combined[:limit]
 
     # =========================
-    # 2) Поиск по pinyin
+    # 2) Быстрый поиск по pinyin
     # =========================
     if _looks_like_pinyin(q):
         q_norm = normalize_pinyin(q)
@@ -249,11 +286,26 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
         if not q_norm:
             return []
 
+        # берем первую букву pinyin
+        # Например ni hao -> n
+        # Это нужно, чтобы не вытаскивать все 6 миллионов записей
+        first_letter = _escape_like(q_norm[0])
+
+        # в старой версии тут было:
+        # select(Entry).where(Entry.pinyin.is_not(None))
+        # То есть backend вытаскивал все pinyin-записи из базы в Python.
+        # Это очень медленно.
+        #
+        # Теперь берем только кандидатов, у которых pinyin начинается с первой буквы.
         stmt = (
             select(Entry)
             .where(Entry.pinyin.is_not(None))
             .where(func.btrim(Entry.pinyin) != "")
+            .where(Entry.pinyin.ilike(f"{first_letter}%", escape="\\"))
+            .order_by(func.length(Entry.pinyin), Entry.id)
+            .limit(max(1000, limit * 100))
         )
+
         res = await session.execute(stmt)
         candidates = list(res.scalars().all())
 
@@ -267,14 +319,10 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
             entry_pinyin_norm = normalize_pinyin(get_effective_pinyin(entry))
             ru_text = (entry.ru or "").strip().lower()
 
-            BAD_RU_WORDS = {
-                "превед",
-                "браво",
-            }
-
             bad_ru_penalty = 0
-            if ru_text in BAD_RU_WORDS:
+            if ru_text in {"превед", "браво"}:
                 bad_ru_penalty = 50
+
             if not entry_pinyin_norm:
                 continue
 
@@ -315,7 +363,7 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
                 if hanzi_len == 2:
                     short_word_bonus = -1
 
-            COMMON_WORDS = {
+            common_word_bonus = {
                 "你好": -50,
                 "您好": -40,
                 "好": -30,
@@ -326,9 +374,7 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
                 "男人": -35,
                 "女人": -35,
                 "喜欢": -35,
-            }
-
-            common_word_bonus = COMMON_WORDS.get(hanzi, 0)
+            }.get(hanzi, 0)
 
             matched_with_rank.append(
                 (
@@ -346,14 +392,14 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
 
         matched_with_rank.sort(
             key=lambda item: (
-                item[0],  # match_rank
-                item[1],  # exact_bonus
-                item[2],  # common_word_bonus
-                item[3],  # bad_ru_penalty
-                item[4],  # token_penalty
-                item[5],  # start_index
-                item[6],  # short_word_bonus
-                item[7],  # hanzi_len
+                item[0],
+                item[1],
+                item[2],
+                item[3],
+                item[4],
+                item[5],
+                item[6],
+                item[7],
                 item[8].id,
             )
         )
@@ -362,6 +408,7 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
         matched = clean_and_deduplicate_entries(matched)
 
         return matched[:limit]
+
     # =========================
     # 3) Поиск по русскому
     # =========================
@@ -370,7 +417,8 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
     q_cap = q_lower.capitalize()
     q_title = q_lower.title()
 
-    # exact search без lower() в SQL
+    # exact search оставляем первым
+    # Точное совпадение всегда должно быть выше и обычно быстрее
     exact_sql = text("""
         select id
         from entries
@@ -417,7 +465,9 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
         combined = clean_and_deduplicate_entries(exact_items)
         return combined[:limit]
 
-    # CHANGE: русский partial search делаем полностью case-insensitive
+    # partial search по русскому ограничиваем сильнее
+    # Было limit * 10, делаем limit * 5
+    # Чтобы не тащить слишком много строк из базы
     rest_sql = text("""
         select id
         from entries
@@ -442,7 +492,7 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
             "q_lower": q_lower,
             "like_lower": f"%{q_lower}%",
             "prefix_lower": f"{q_lower}%",
-            "rest_limit": max(100, limit * 10),
+            "rest_limit": max(100, limit * 5),
         },
     )
     rest_ids = [row[0] for row in rest_res.all()]
@@ -463,13 +513,10 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
         rest_items = list(rest_orm_res.scalars().all())
         rest_items = clean_and_deduplicate_entries(rest_items)
 
-
     combined = clean_and_deduplicate_entries(exact_items + rest_items)
 
-    # =========================
-    # CHANGE: умный ranking русского
-    # =========================
-    # CHANGE: финальный ranking для русского
+    # ranking русского оставляем, но чуть чистим
+    # Он отвечает за то, какие переводы будут выше
     def ru_rank(entry: Entry) -> tuple[int, int, int, int, int, int, int, int]:
         ru_text = (entry.ru or "").strip().lower()
 
@@ -486,17 +533,12 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
         elif ru_text.startswith(q_lower + "."):
             ru_exact_word_bonus = -40
 
-        ru_text = re.sub(r"<.*?>", "", ru_text)  # убираем html
-        ru_text = " ".join(ru_text.split())  # убираем лишние пробелы
-        # ❗ убираем мусорные переводы
-        BAD_RU_WORDS = {
-            "превед",
-            "браво",  # временно убираем как приоритет
-        }
+        ru_text = re.sub(r"<.*?>", "", ru_text)
+        ru_text = " ".join(ru_text.split())
 
         penalty = 0
 
-        if ru_text in BAD_RU_WORDS:
+        if ru_text in {"превед", "браво"}:
             penalty += 50
 
         hanzi_text = (entry.hanzi or "").strip()
@@ -509,8 +551,6 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
             rank = 2
         else:
             rank = 3
-
-        # 2. штрафы за "грязный" или слишком длинный перевод
 
         if len(ru_text) > 40:
             penalty += 2
@@ -529,41 +569,27 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
             penalty += 2
 
         if ";" in ru_text:
-            penalty += 2
+            penalty += 3
 
         if "," in ru_text and len(ru_text) > 25:
-            penalty += 1
+            penalty += 2
 
-        # новое: если в переводе есть китайский текст, это часто длинная статья/пример
         if any("\u3400" <= ch <= "\u9fff" for ch in ru_text):
             penalty += 1
 
-        # новое: если есть вопросительные/восклицательные куски, часто это пример, а не базовый перевод
         if "?" in ru_text or "!" in ru_text:
             penalty += 2
 
-        # CHANGE: если в переводе много разделителей, это часто не базовое значение,
-        # а длинная словарная статья с кучей вариантов
-        if ";" in ru_text:
-            penalty += 1
-
-        if "," in ru_text and len(ru_text) > 25:
-            penalty += 1
-
-        # 3. бонус для короткого hanzi:
-        # обычно базовые слова короче и полезнее в топе
         hanzi_priority = len(hanzi_text)
 
         common_ru_bonus = 0
+        if hanzi_text in {"中国", "男人", "女人", "喜欢"}:
+            common_ru_bonus = -20
 
         examples_bonus = 0
         if getattr(entry, "examples", None):
             examples_bonus = -10
 
-        if hanzi_text in {"中国", "男人", "女人", "喜欢"}:
-            common_ru_bonus = -20
-
-        # 4. бонус для короткого "чистого" перевода
         ru_len_priority = len(ru_text)
 
         return (
@@ -577,7 +603,6 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
             len(entry.pinyin or ""),
         )
 
-    # CHANGE: сортировка
     combined.sort(key=ru_rank)
 
     return combined[:limit]
