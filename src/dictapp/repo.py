@@ -414,69 +414,25 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
     # =========================
     q_norm = q.strip()
     q_lower = q_norm.lower()
-    q_cap = q_lower.capitalize()
-    q_title = q_lower.title()
 
-    # exact search оставляем первым
-    # Точное совпадение всегда должно быть выше и обычно быстрее
-    exact_sql = text("""
-        select id
-        from entries
-        where ru is not null
-          and btrim(ru) <> ''
-          and btrim(ru) <> '_'
-          and (
-              btrim(ru) in (:q1, :q2, :q3)
-              or lower(btrim(ru)) = :q4
-          )
-        order by length(ru), id
-        limit :limit
-    """)
-
-    exact_res = await session.execute(
-        exact_sql,
-        {
-            "q1": q_norm,
-            "q2": q_cap,
-            "q3": q_title,
-            "q4": q_lower,
-            "limit": limit,
-        },
-    )
-    exact_ids = [row[0] for row in exact_res.all()]
-
-    exact_items = []
-    if exact_ids:
-        exact_order = case(
-            *[(Entry.id == entry_id, pos) for pos, entry_id in enumerate(exact_ids)],
-            else_=999999,
-        )
-
-        exact_stmt = (
-            select(Entry)
-            .where(Entry.id.in_(exact_ids))
-            .order_by(exact_order)
-        )
-        exact_orm_res = await session.execute(exact_stmt)
-        exact_items = list(exact_orm_res.scalars().all())
-        exact_items = clean_and_deduplicate_entries(exact_items)
-
-    if len(exact_items) >= limit:
-        combined = clean_and_deduplicate_entries(exact_items)
-        return combined[:limit]
-
-    # Сначала быстрый prefix search по русскому:
-    # lower(ru) like 'слово%'
-    # Это намного легче для базы, чем '%слово%'.
+    # Быстрый русский prefix-search через индекс:
+    # ix_entries_ru_prefix80 ON left(lower(ru), 80)
+    #
+    # Важно: выражение в SQL должно совпадать с выражением в индексе:
+    # left(lower(ru), 80) like :prefix_lower
     prefix_sql = text("""
         select id
         from entries
         where ru is not null
           and btrim(ru) <> ''
           and btrim(ru) <> '_'
-          and lower(ru) like :prefix_lower
-          and lower(btrim(ru)) <> :q_lower
+          and left(lower(ru), 80) like :prefix_lower
         order by
+            case
+                when lower(btrim(ru)) = :q_lower then 0
+                when lower(ru) like :prefix_lower then 1
+                else 2
+            end,
             length(ru),
             id
         limit :prefix_limit
@@ -487,16 +443,15 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
         {
             "q_lower": q_lower,
             "prefix_lower": f"{q_lower}%",
-            "prefix_limit": max(60, limit * 3),
+            "prefix_limit": max(80, limit * 4),
         },
     )
-    rest_ids = [row[0] for row in prefix_res.all()]
 
-    # Если prefix search дал мало результатов,
-    # тогда делаем маленький fallback через contains search:
-    # lower(ru) like '%слово%'
-    # Но уже с маленьким лимитом, чтобы не грузить базу.
-    if len(rest_ids) < limit:
+    candidate_ids = [row[0] for row in prefix_res.all()]
+
+    # Fallback contains search:
+    # запускаем только если prefix дал мало результатов.
+    if len(candidate_ids) < limit:
         fallback_sql = text("""
             select id
             from entries
@@ -504,7 +459,6 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
               and btrim(ru) <> ''
               and btrim(ru) <> '_'
               and lower(ru) like :contains_lower
-              and lower(btrim(ru)) <> :q_lower
               and id not in :existing_ids
             order by
                 length(ru),
@@ -517,32 +471,31 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
         fallback_res = await session.execute(
             fallback_sql,
             {
-                "q_lower": q_lower,
                 "contains_lower": f"%{q_lower}%",
-                "existing_ids": rest_ids or [-1],
+                "existing_ids": candidate_ids or [-1],
                 "fallback_limit": max(20, limit),
             },
         )
 
-        rest_ids.extend([row[0] for row in fallback_res.all()])
+        candidate_ids.extend([row[0] for row in fallback_res.all()])
 
-    rest_items = []
-    if rest_ids:
-        rest_order = case(
-            *[(Entry.id == entry_id, pos) for pos, entry_id in enumerate(rest_ids)],
+    combined = []
+
+    if candidate_ids:
+        candidate_order = case(
+            *[(Entry.id == entry_id, pos) for pos, entry_id in enumerate(candidate_ids)],
             else_=999999,
         )
 
-        rest_stmt = (
+        candidate_stmt = (
             select(Entry)
-            .where(Entry.id.in_(rest_ids))
-            .order_by(rest_order)
+            .where(Entry.id.in_(candidate_ids))
+            .order_by(candidate_order)
         )
-        rest_orm_res = await session.execute(rest_stmt)
-        rest_items = list(rest_orm_res.scalars().all())
-        rest_items = clean_and_deduplicate_entries(rest_items)
 
-    combined = clean_and_deduplicate_entries(exact_items + rest_items)
+        candidate_orm_res = await session.execute(candidate_stmt)
+        combined = list(candidate_orm_res.scalars().all())
+        combined = clean_and_deduplicate_entries(combined)
 
     # ranking русского оставляем, но чуть чистим
     # Он отвечает за то, какие переводы будут выше
