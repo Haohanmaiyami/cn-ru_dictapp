@@ -302,8 +302,8 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
             .where(Entry.pinyin.is_not(None))
             .where(func.btrim(Entry.pinyin) != "")
             .where(Entry.pinyin.ilike(f"{first_letter}%", escape="\\"))
-            .order_by(func.length(Entry.pinyin), Entry.id)
-            .limit(max(1000, limit * 100))
+            .order_by(Entry.id)
+            .limit(max(50000, limit * 2500))
         )
 
         res = await session.execute(stmt)
