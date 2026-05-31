@@ -100,9 +100,21 @@ async def api_ai_analyze(
     hits = await find_dictionary_hits_for_text(session, text=text, limit=12)
     analysis_data = await analyze_with_ollama(text=text, dictionary_entries=hits)
 
-    bad_keywords = {"个是", "这个", "那个", "的是", "是太"}
+    bad_keywords = {"个是", "这个", "那个", "的是", "是太", "于下", "心开"}
 
     keywords = []
+
+    for word in analysis_data.get("keywords", []):
+        word = (word or "").strip()
+
+        if not word:
+            continue
+
+        if word in bad_keywords:
+            continue
+
+        if word not in keywords:
+            keywords.append(word)
 
     for hit in hits:
         hanzi = (hit.hanzi or "").strip()
@@ -127,8 +139,8 @@ async def api_ai_analyze(
         dictionary_hits=[
             AIDictionaryHit(
                 hanzi=e.hanzi,
-                pinyin=e.pinyin,
-                ru=e.ru,
+                pinyin=get_effective_pinyin(e),
+                ru=split_ru_examples(e.ru or "")[0],
                 pos=e.pos,
             )
             for e in hits

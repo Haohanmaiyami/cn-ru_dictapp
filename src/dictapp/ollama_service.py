@@ -35,7 +35,7 @@ def build_dictionary_context(entries: list[Entry]) -> str:
     return "\n".join(lines)
 
 
-def build_analysis_prompt(text: str) -> str:
+def build_analysis_prompt(text: str, dictionary_context: str = "") -> str:
     return f"""
 Ты переводчик с китайского на русский.
 
@@ -56,12 +56,12 @@ def build_analysis_prompt(text: str) -> str:
 - keywords = китайские слова из текста
 - Если предложение вопросительное, natural должен быть нормальным русским вопросом
 - НЕ делай дословный кривой перевод, делай естественный русский
-- НЕ начинай перевод со слов "То вещь"
-- Если есть 那个东西, переводи как "ту вещь" или "то, что"
 - Для сложных предложений natural должен звучать как обычный русский
 - keywords не должны быть местоимениями и служебными словами: 我, 你, 这个, 那个, 是, 的, 了, 太, 不
-- keywords должны быть смысловыми словами из текста: например 不简单, 简单, 记得, 买东西
-- keywords должны быть цельными смысловыми выражениями, например 不简单, 简单, 还记得, 买东西
+- keywords должны быть цельными смысловыми выражениями
+
+Словарные подсказки:
+{dictionary_context}
 
 Пример:
 
@@ -78,6 +78,44 @@ def build_analysis_prompt(text: str) -> str:
 Китайский текст:
 {text}
 """.strip()
+
+def fallback_analysis(text: str, dictionary_entries: list[Entry]) -> dict:
+    keywords: list[str] = []
+
+    bad_keywords = {
+        "我", "你", "他", "她", "它", "们",
+        "这个", "那个", "这些", "那些",
+        "是", "了", "的", "得", "地",
+        "太", "很", "不", "吗", "呢", "啊",
+        "个是", "的是", "的是太", "是太",
+        "于下", "心开",
+    }
+
+    for entry in dictionary_entries:
+        hanzi = (entry.hanzi or "").strip()
+        ru = (entry.ru or "").strip()
+
+        if not hanzi:
+            continue
+
+        if hanzi in bad_keywords:
+            continue
+
+        if len(hanzi) < 2:
+            continue
+
+        if ru == "_" or ru.startswith("_"):
+            continue
+
+        if hanzi not in keywords:
+            keywords.append(hanzi)
+
+    return {
+        "literal": "",
+        "natural": "",
+        "pinyin": " ".join(lazy_pinyin(text, style=Style.TONE)),
+        "keywords": keywords[:8],
+    }
 
 async def analyze_with_ollama(text: str, dictionary_entries: list[Entry]) -> dict:
     cache_key = ("cn_ru", text.strip())
@@ -108,7 +146,8 @@ async def analyze_with_ollama(text: str, dictionary_entries: list[Entry]) -> dic
         }
 
     # ⬇️ только если не простой кейс — идём в Ollama
-    prompt = build_analysis_prompt(text=text)
+    dictionary_context = build_dictionary_context(dictionary_entries)
+    prompt = build_analysis_prompt(text=text, dictionary_context=dictionary_context)
 
     payload = {
         "model": settings.ollama_model,
@@ -116,9 +155,9 @@ async def analyze_with_ollama(text: str, dictionary_entries: list[Entry]) -> dic
         "stream": False,
         "keep_alive": "30m",
         "options": {
-            "num_predict": 60,
+            "num_predict": 160,
             "temperature": 0.1,
-            "num_ctx": 512
+            "num_ctx": 2048
         },
     }
 
@@ -140,46 +179,50 @@ async def analyze_with_ollama(text: str, dictionary_entries: list[Entry]) -> dic
                 data = response.json()
             break
 
+
         except httpx.ReadTimeout:
+
             print(f"⏳ Timeout, retry {attempt + 1}")
+
             if attempt == 1:
-                return {
-                    "literal": "",
-                    "natural": "",
-                    "pinyin": "",
-                    "keywords": [],
-                }
+                return fallback_analysis(text, dictionary_entries)
+
+
 
         except Exception as e:
+
             print(f"❌ Ollama error: {e}")
-            return {
-                "literal": "",
-                "natural": "",
-                "pinyin": "",
-                "keywords": [],
-            }
+
+            return fallback_analysis(text, dictionary_entries)
 
     raw_response = (data.get("response") or "").strip()
 
     try:
         parsed = json.loads(raw_response)
 
+
+
     except json.JSONDecodeError:
+
         # >>> CHANGE: пытаемся вытащить JSON вручную
+
         try:
+
             start = raw_response.find("{")
+
             end = raw_response.rfind("}") + 1
+
+            if start == -1 or end <= start:
+                return fallback_analysis(text, dictionary_entries)
+
             cleaned = raw_response[start:end]
 
             parsed = json.loads(cleaned)
 
+
         except Exception:
-            return {
-                "literal": "",
-                "natural": "",
-                "pinyin": "",
-                "keywords": [],
-            }
+
+            return fallback_analysis(text, dictionary_entries)
 
     literal = str(parsed.get("literal", "") or "").strip()
     natural = str(parsed.get("natural", "") or "").strip()
