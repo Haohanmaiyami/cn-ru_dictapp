@@ -1,5 +1,5 @@
 import re
-from sqlalchemy import select, case, func, text
+from sqlalchemy import select, case, func, text, bindparam
 from sqlalchemy.ext.asyncio import AsyncSession
 from dictapp.models import Entry
 import unicodedata
@@ -465,37 +465,66 @@ async def search_entries(session: AsyncSession, q: str, limit: int = 30) -> list
         combined = clean_and_deduplicate_entries(exact_items)
         return combined[:limit]
 
-    # partial search по русскому ограничиваем сильнее
-    # Было limit * 10, делаем limit * 5
-    # Чтобы не тащить слишком много строк из базы
-    rest_sql = text("""
+    # Сначала быстрый prefix search по русскому:
+    # lower(ru) like 'слово%'
+    # Это намного легче для базы, чем '%слово%'.
+    prefix_sql = text("""
         select id
         from entries
         where ru is not null
           and btrim(ru) <> ''
           and btrim(ru) <> '_'
-          and lower(ru) like :like_lower
+          and lower(ru) like :prefix_lower
           and lower(btrim(ru)) <> :q_lower
         order by
-            case
-                when lower(ru) like :prefix_lower then 0
-                else 1
-            end,
             length(ru),
             id
-        limit :rest_limit
+        limit :prefix_limit
     """)
 
-    rest_res = await session.execute(
-        rest_sql,
+    prefix_res = await session.execute(
+        prefix_sql,
         {
             "q_lower": q_lower,
-            "like_lower": f"%{q_lower}%",
             "prefix_lower": f"{q_lower}%",
-            "rest_limit": max(100, limit * 5),
+            "prefix_limit": max(60, limit * 3),
         },
     )
-    rest_ids = [row[0] for row in rest_res.all()]
+    rest_ids = [row[0] for row in prefix_res.all()]
+
+    # Если prefix search дал мало результатов,
+    # тогда делаем маленький fallback через contains search:
+    # lower(ru) like '%слово%'
+    # Но уже с маленьким лимитом, чтобы не грузить базу.
+    if len(rest_ids) < limit:
+        fallback_sql = text("""
+            select id
+            from entries
+            where ru is not null
+              and btrim(ru) <> ''
+              and btrim(ru) <> '_'
+              and lower(ru) like :contains_lower
+              and lower(btrim(ru)) <> :q_lower
+              and id not in :existing_ids
+            order by
+                length(ru),
+                id
+            limit :fallback_limit
+        """).bindparams(
+            bindparam("existing_ids", expanding=True)
+        )
+
+        fallback_res = await session.execute(
+            fallback_sql,
+            {
+                "q_lower": q_lower,
+                "contains_lower": f"%{q_lower}%",
+                "existing_ids": rest_ids or [-1],
+                "fallback_limit": max(20, limit),
+            },
+        )
+
+        rest_ids.extend([row[0] for row in fallback_res.all()])
 
     rest_items = []
     if rest_ids:
