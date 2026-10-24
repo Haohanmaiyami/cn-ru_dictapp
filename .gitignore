@@ -40,3 +40,5 @@ data/
 *.swp
 
 .mypy_cache/
+
+.venv*/

@@ -8,8 +8,8 @@ from dictapp.repo import get_entry_by_id, search_entries
 from dictapp.repo import find_dictionary_hits_for_text
 from dictapp.schemas import EntryOut, SearchResponse
 from dictapp.schemas import AIAnalyzeRequest, AIAnalyzeResponse, AIDictionaryHit
-from dictapp.ollama_service import analyze_with_ollama
-from dictapp.ollama_service import translate_ru_to_cn_with_ollama
+from dictapp.ai_service import analyze_with_ai
+from dictapp.ai_service import translate_ru_to_cn_with_ai
 from fastapi import Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -17,19 +17,11 @@ from fastapi.templating import Jinja2Templates
 from dictapp.schemas import AITranslateRuToCnRequest, AITranslateRuToCnResponse
 from dictapp.repo import split_ru_examples
 from dictapp.repo import get_effective_pinyin
-from dictapp.ollama_service import warmup_ollama
-import sys
 
 app = FastAPI(
     title="Chinese-Russian Dictionary MVP",
 )
 
-@app.on_event("startup")
-async def startup_event():
-    print("🔥 Startup warmup...", flush=True)
-    sys.stdout.flush()
-    await warmup_ollama()
-    print("🔥 DONE", flush=True)
 
 app.mount("/static", StaticFiles(directory="src/dictapp/static"), name="static")
 
@@ -94,56 +86,35 @@ async def api_ai_analyze(
     session: AsyncSession = Depends(get_session),
 ):
     text = (payload.text or "").strip()
+
     if not text:
         raise HTTPException(status_code=400, detail="Text is required")
 
-    hits = await find_dictionary_hits_for_text(session, text=text, limit=12)
-    analysis_data = await analyze_with_ollama(text=text, dictionary_entries=hits)
+    hits = await find_dictionary_hits_for_text(
+        session,
+        text=text,
+        limit=12,
+    )
 
-    bad_keywords = {"个是", "这个", "那个", "的是", "是太", "于下", "心开"}
-
-    keywords = []
-
-    for word in analysis_data.get("keywords", []):
-        word = (word or "").strip()
-
-        if not word:
-            continue
-
-        if word in bad_keywords:
-            continue
-
-        if word not in keywords:
-            keywords.append(word)
-
-    for hit in hits:
-        hanzi = (hit.hanzi or "").strip()
-
-        if not hanzi:
-            continue
-
-        if hanzi in bad_keywords:
-            continue
-
-        if hanzi not in keywords:
-            keywords.append(hanzi)
-
-    keywords = keywords[:8]
+    analysis_data = await analyze_with_ai(
+        text=text,
+        dictionary_entries=hits,
+    )
 
     return AIAnalyzeResponse(
         text=text,
         literal=analysis_data["literal"],
         natural=analysis_data["natural"],
         pinyin=analysis_data["pinyin"],
-        keywords=keywords,
+        keywords=analysis_data["keywords"],
         dictionary_hits=[
             AIDictionaryHit(
-                hanzi=e.hanzi,
-                pinyin=get_effective_pinyin(e),
-                ru=split_ru_examples(e.ru or "")[0],
-                pos=e.pos,
+                hanzi=entry.hanzi,
+                pinyin=get_effective_pinyin(entry),
+                ru=split_ru_examples(entry.ru or "")[0],
+                pos=entry.pos,
             )
-            for e in hits
+            for entry in hits
         ],
     )
 
@@ -157,7 +128,7 @@ async def api_ai_translate_ru_to_cn(
     if not text:
         raise HTTPException(status_code=400, detail="Text is required")
 
-    result = await translate_ru_to_cn_with_ollama(text=text)
+    result = await translate_ru_to_cn_with_ai(text=text)
 
     return AITranslateRuToCnResponse(
         text=text,
