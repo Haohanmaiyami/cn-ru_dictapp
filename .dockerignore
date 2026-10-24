@@ -1,5 +1,11 @@
 data/
-.venv/
+*.dsl
+.venv*/
+venv/
 __pycache__/
 *.pyc
 .git/
+.env
+.env.*
+*.log
+.idea/
