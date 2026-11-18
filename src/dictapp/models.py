@@ -1,4 +1,4 @@
-from sqlalchemy import Integer, String, Text, Index
+from sqlalchemy import Integer, String, Text, Index, JSON
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -16,6 +16,9 @@ class Entry(Base):
     ru: Mapped[str] = mapped_column(Text, nullable=False) # in russian translation
     pos: Mapped[str | None] = mapped_column(String(32), nullable=True) # части речи
     examples: Mapped[str | None] = mapped_column(Text, nullable=True) # examples
+    # Additive fields: old rows and their IDs remain valid after migration.
+    raw_dsl: Mapped[str | None] = mapped_column(Text, nullable=True)
+    article: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 # indexes для поиска в дальнейшем
 

@@ -1,0 +1,91 @@
+[
+  {
+    "source": "stage7 full-local BKRS snapshot; exact raw_dsl; original DB row ID",
+    "id": 238,
+    "hanzi": "喀什米尔",
+    "raw_dsl": "kāshímǐ’ěr\nкашемир[m1]-----[/m]Кашмир ([i]штат в Индии[/i])",
+    "header_removed": true,
+    "expected_texts": [
+      "кашемир",
+      "-----",
+      "Кашмир (штат в Индии)"
+    ]
+  },
+  {
+    "source": "stage7 full-local BKRS snapshot; exact raw_dsl; original DB row ID",
+    "id": 3804,
+    "hanzi": "陆轴",
+    "raw_dsl": "lùzhóu,[c][i] paзг.[/c] [c][/i][/c]liùzhóu\n[m1]каменный каток ([i]для выравнивания поливных полей[/i])[/m]",
+    "header_removed": false,
+    "expected_texts": [
+      "lùzhóu, paзг. liùzhóu",
+      "каменный каток (для выравнивания поливных полей)"
+    ]
+  },
+  {
+    "source": "stage7 full-local BKRS snapshot; exact raw_dsl; original DB row ID",
+    "id": 6742,
+    "hanzi": "豊",
+    "raw_dsl": "lǐ\n[m1][/m][m1]1) * ли ([i]ритуальный сосуд, род чаши[/i])[/m][m1]2) * [c][i]вм.[/i][/c] [ref]礼[/ref] ([i]этикет; обряд, ритуал[/i])[/m][m1]3) * [p]вм.[/p] [ref]丰[/ref] ([i]богатый, пышный[/i])[/m]",
+    "header_removed": true,
+    "expected_texts": [
+      "* ли (ритуальный сосуд, род чаши)",
+      "* вм. 礼 (этикет; обряд, ритуал)",
+      "* вм. 丰 (богатый, пышный)"
+    ]
+  },
+  {
+    "source": "stage7 full-local BKRS snapshot; exact raw_dsl; original DB row ID",
+    "id": 16535,
+    "hanzi": "卟",
+    "raw_dsl": "bǔ\n[p]см.[/p] [ref]卟啉[/ref], [ref]卟吩[/ref][m1]-----[/m][p]вм.[/p] [ref]噗[/ref]",
+    "header_removed": true,
+    "expected_texts": [
+      "см. 卟啉, 卟吩",
+      "-----",
+      "вм. 噗"
+    ]
+  },
+  {
+    "source": "stage7 full-local BKRS snapshot; exact raw_dsl; original DB row ID",
+    "id": 68879,
+    "hanzi": "主理",
+    "raw_dsl": "_\n[c brown]\\[manage\\][/c] 主管处理",
+    "header_removed": true,
+    "expected_texts": [
+      "[manage] 主管处理"
+    ]
+  },
+  {
+    "source": "stage7 full-local BKRS snapshot; exact raw_dsl; original DB row ID",
+    "id": 296218,
+    "hanzi": "燕麦试法",
+    "raw_dsl": "_\n[m1]Avena {拉} test[/m]",
+    "header_removed": true,
+    "expected_texts": [
+      "Avena {拉} test"
+    ]
+  },
+  {
+    "source": "stage7 full-local BKRS snapshot; exact raw_dsl; original DB row ID",
+    "id": 493663,
+    "hanzi": "脆生生",
+    "raw_dsl": "cuìshēngshēng\n[m1]1) мягкий; рассыпчатый; хрупкий (о пищевых продуктах)[/m][m2][*][ex]笋片脆生生的[/ex][/*][/m][m1]2) звонкий (о голосе или звуке)[/m][m2][*][ex][/ex][/*][/m]",
+    "header_removed": true,
+    "expected_texts": [
+      "мягкий; рассыпчатый; хрупкий (о пищевых продуктах)",
+      "笋片脆生生的",
+      "звонкий (о голосе или звуке)"
+    ]
+  },
+  {
+    "source": "stage7 full-local BKRS snapshot; exact raw_dsl; original DB row ID",
+    "id": 783506,
+    "hanzi": "𡛄",
+    "raw_dsl": "_\n[m1][i][/m][m1]значение неизвестно[/m][m1][/i][/m]",
+    "header_removed": true,
+    "expected_texts": [
+      "значение неизвестно"
+    ]
+  }
+]

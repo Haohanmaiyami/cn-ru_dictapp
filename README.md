@@ -160,7 +160,7 @@ MIT
 
 
 name dictionaryuser
-password kaishi123 password in docker same
+Set DB_PASSWORD in your private .env file; never commit database credentials.
 database dictionarydb
 owner dictionaryuser
 

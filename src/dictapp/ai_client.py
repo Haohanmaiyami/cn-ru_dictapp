@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 
@@ -8,6 +9,7 @@ from dictapp.settings import settings
 
 
 logger = logging.getLogger("uvicorn.error")
+AI_REQUEST_DEADLINE_SECONDS = 90.0
 
 
 async def request_ai_json(prompt: str) -> dict:
@@ -33,18 +35,19 @@ async def request_ai_json(prompt: str) -> dict:
 
     # Один запрос, без автоматических повторов.
     try:
-        async with httpx.AsyncClient(
-            timeout=timeout,
-            follow_redirects=False,
-        ) as client:
-            response = await client.post(
-                f"{settings.ai_base_url.rstrip('/')}/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}"},
-                json=payload,
-            )
-            response.raise_for_status()
+        async with asyncio.timeout(AI_REQUEST_DEADLINE_SECONDS):
+            async with httpx.AsyncClient(
+                timeout=timeout,
+                follow_redirects=False,
+            ) as client:
+                response = await client.post(
+                    f"{settings.ai_base_url.rstrip('/')}/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    json=payload,
+                )
+                response.raise_for_status()
 
-    except httpx.TimeoutException:
+    except (httpx.TimeoutException, TimeoutError):
         raise HTTPException(
             status_code=504,
             detail="Истекло время ожидания ответа ИИ.",

@@ -1,0 +1,197 @@
+{
+  "source": "Exact version-1 results from the stage3.1 pre-edit parser checkpoint.",
+  "baseline_parser_sha256": "c5b872255432fd05feaee2d3ef268f911737dcb14fc5f007bfa6c2da2a9e995e",
+  "articles": {
+    "妈逼": {
+      "version": 1,
+      "senses": [
+        {
+          "number": null,
+          "definition": "см. 妈屄",
+          "examples": [],
+          "references": [
+            {
+              "target": "妈屄",
+              "label": "妈屄"
+            }
+          ]
+        }
+      ]
+    },
+    "什么": {
+      "version": 1,
+      "senses": [
+        {
+          "number": "1",
+          "definition": "(вопросительное) что?; какой?",
+          "examples": [
+            {
+              "chinese": "什么事?",
+              "translation": "что такое?, что случилось?, в чём дело?"
+            },
+            {
+              "chinese": "这是什么?",
+              "translation": "что это [такое]?"
+            },
+            {
+              "chinese": "什么人?",
+              "translation": "что за человек?, кто такой (какого общественного положения)"
+            }
+          ],
+          "references": []
+        },
+        {
+          "number": "2",
+          "definition": "(относительное) что; какой",
+          "examples": [
+            {
+              "chinese": "任什么",
+              "translation": "какой угодно, любой; перед отрицанием никакой"
+            },
+            {
+              "chinese": "... 什么... 什么",
+              "translation": "что..., то [и]...; каков..., таков [и]"
+            },
+            {
+              "chinese": "要什么有什么",
+              "translation": "что ни спросишь, — всё есть!"
+            }
+          ],
+          "references": []
+        },
+        {
+          "number": "3",
+          "definition": "(неопределённое) что-то, что-либо; какой-то, какой-либо",
+          "examples": [
+            {
+              "chinese": "他们仿佛在谈论什么",
+              "translation": "они, кажется, что-то обсуждают"
+            },
+            {
+              "chinese": "不买什么东西",
+              "translation": "ничего не покупать"
+            }
+          ],
+          "references": []
+        },
+        {
+          "number": "4",
+          "definition": "(после глагола) из-за чего?, зачем?",
+          "examples": [
+            {
+              "chinese": "他们闹什么?",
+              "translation": "из-за чего они шумят?"
+            }
+          ],
+          "references": []
+        },
+        {
+          "number": "5",
+          "definition": "(перед перечислением или цитатой) какой-то, такой, как, вроде, наподобие",
+          "examples": [
+            {
+              "chinese": "什么送个信儿啊, 跑个腿儿啊, 我多能干",
+              "translation": "такие поручения, как: снести письмо, сбегать куда-нибудь, — я всё это сумею сделать!"
+            }
+          ],
+          "references": []
+        },
+        {
+          "number": "6",
+          "definition": "(перед цитированием слов собеседника; неодобр.) что за...; какой там; что значит...",
+          "examples": [
+            {
+              "chinese": "什么非用不可, 我就从来没用过",
+              "translation": "что ты мне толкуешь, что без этого обходиться нельзя?! Ведь обходился же я до сих пор!"
+            }
+          ],
+          "references": []
+        },
+        {
+          "number": "7",
+          "definition": "(восклицательное) что?",
+          "examples": [
+            {
+              "chinese": "什么, 已经九点了?",
+              "translation": "что, уже 9 часов?"
+            }
+          ],
+          "references": []
+        }
+      ]
+    },
+    "打扰": {
+      "version": 1,
+      "senses": [
+        {
+          "number": "1",
+          "definition": "тревожить, беспокоить",
+          "examples": [],
+          "references": []
+        },
+        {
+          "number": "2",
+          "definition": "вежл. простите за беспокойство",
+          "examples": [
+            {
+              "chinese": "打扰你了",
+              "translation": "простите, что побеспокоил Вас"
+            },
+            {
+              "chinese": "打扰一下",
+              "translation": "простите"
+            }
+          ],
+          "references": []
+        }
+      ]
+    },
+    "妈屄": {
+      "version": 1,
+      "senses": [
+        {
+          "number": null,
+          "definition": "груб. мамина пизда; (твою) мать",
+          "examples": [],
+          "references": []
+        }
+      ]
+    },
+    "你": {
+      "version": 1,
+      "senses": [
+        {
+          "number": null,
+          "definition": "ты, твой",
+          "examples": [
+            {
+              "chinese": "你我两个人",
+              "translation": "мы с тобой [вдвоём]"
+            },
+            {
+              "chinese": "你家里",
+              "translation": "в твоей семье, у тебя дома"
+            }
+          ],
+          "references": []
+        }
+      ]
+    },
+    "你好": {
+      "version": 1,
+      "senses": [
+        {
+          "number": null,
+          "definition": "привет, здравствуй (стандартное приветствие)",
+          "examples": [
+            {
+              "chinese": "王女士，你好！",
+              "translation": "Добрый день, госпожа Ван!"
+            }
+          ],
+          "references": []
+        }
+      ]
+    }
+  }
+}

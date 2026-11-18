@@ -42,3 +42,10 @@ data/
 .mypy_cache/
 
 .venv*/
+
+# Private local development and rollout artifacts
+.local-development-only
+.local-dev/
+release-artifacts/
+*.dump
+*.sqlite*

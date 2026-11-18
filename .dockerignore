@@ -9,3 +9,11 @@ __pycache__/
 .env.*
 *.log
 .idea/
+
+# Local-only development and release artifacts must never enter the image
+.local-development-only
+.local-dev/
+release-artifacts/
+*.dump
+*.sqlite*
+.pytest_cache/

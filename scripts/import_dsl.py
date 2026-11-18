@@ -12,6 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dictapp.db import AsyncSessionMaker
+from dictapp.dsl_parser import parse_dsl_article
 from dictapp.models import Entry
 
 BAD_LOG_FILE = Path("bad_entries.log")
@@ -244,6 +245,8 @@ class ParsedEntry:
     pinyin: Optional[str]
     ru_head: str
     ru_full: Optional[str]
+    raw_dsl: Optional[str] = None
+    article: Optional[dict] = None
 
 
 def iter_entries_for_file(path: Path, encoding: str = "utf-16") -> Iterator[ParsedEntry]:
@@ -269,6 +272,8 @@ def iter_entries_for_file(path: Path, encoding: str = "utf-16") -> Iterator[Pars
                 pinyin=pinyin,
                 ru_head=ru_text,
                 ru_full=dsl_to_html(body) if body else ru_text,
+                raw_dsl=body,
+                article=parse_dsl_article(body),
             )
 
         else:
@@ -328,6 +333,8 @@ async def import_file(session: AsyncSession, file_path: Path, batch_size: int = 
             ru=ru_head,
             pos=None,
             examples=ru_full,
+            raw_dsl=item.raw_dsl,
+            article=item.article,
         )
         batch.append(e)
 

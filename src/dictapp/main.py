@@ -8,6 +8,7 @@ from dictapp.repo import get_entry_by_id, search_entries
 from dictapp.repo import find_dictionary_hits_for_text
 from dictapp.schemas import EntryOut, SearchResponse
 from dictapp.schemas import AIAnalyzeRequest, AIAnalyzeResponse, AIDictionaryHit
+from dictapp.ai_limits import limit_ai_request
 from dictapp.ai_service import analyze_with_ai
 from dictapp.ai_service import translate_ru_to_cn_with_ai
 from fastapi import Request
@@ -15,8 +16,8 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from dictapp.schemas import AITranslateRuToCnRequest, AITranslateRuToCnResponse
-from dictapp.repo import split_ru_examples
 from dictapp.repo import get_effective_pinyin
+from dictapp.presentation import present_entry
 
 app = FastAPI(
     title="Chinese-Russian Dictionary MVP",
@@ -47,15 +48,7 @@ async def api_search(
     else:
         results = await search_entries(session, q=q_clean, limit=limit)
 
-        cleaned_results = []
-        for entry in results:
-            translation, examples = split_ru_examples(entry.ru or "")
-            entry.ru = translation
-            entry.examples = examples
-            entry.pinyin = get_effective_pinyin(entry)
-            cleaned_results.append(entry)
-
-        results = cleaned_results
+        results = [present_entry(entry) for entry in results]
 
     return SearchResponse(q=q_clean, count=len(results), results=results)
 
@@ -68,19 +61,10 @@ async def api_entry(
     entry = await get_entry_by_id(session, entry_id=entry_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="Entry not found")
-    translation, examples = split_ru_examples(entry.ru or "")
-
-    return EntryOut(
-        id=entry.id,
-        hanzi=entry.hanzi,
-        pinyin=get_effective_pinyin(entry),
-        ru=translation,
-        pos=entry.pos,
-        examples=examples,
-    )
+    return present_entry(entry)
 
 
-@app.post("/api/ai/analyze", response_model=AIAnalyzeResponse)
+@app.post("/api/ai/analyze", response_model=AIAnalyzeResponse, dependencies=[Depends(limit_ai_request)])
 async def api_ai_analyze(
     payload: AIAnalyzeRequest,
     session: AsyncSession = Depends(get_session),
@@ -111,7 +95,7 @@ async def api_ai_analyze(
             AIDictionaryHit(
                 hanzi=entry.hanzi,
                 pinyin=get_effective_pinyin(entry),
-                ru=split_ru_examples(entry.ru or "")[0],
+                ru=present_entry(entry).ru,
                 pos=entry.pos,
             )
             for entry in hits
@@ -119,7 +103,7 @@ async def api_ai_analyze(
     )
 
 
-@app.post("/api/ai/translate-ru-to-cn", response_model=AITranslateRuToCnResponse)
+@app.post("/api/ai/translate-ru-to-cn", response_model=AITranslateRuToCnResponse, dependencies=[Depends(limit_ai_request)])
 async def api_ai_translate_ru_to_cn(
     payload: AITranslateRuToCnRequest,
 ):
@@ -156,24 +140,7 @@ async def page_search(
         results = []
     else:
         results = await search_entries(session, q=q_clean, limit=limit)
-        cleaned_results = []
-
-        for entry in results:
-            translation, examples = split_ru_examples(entry.ru or "")
-
-            cleaned_results.append(
-                EntryOut(
-                    id=entry.id,
-                    hanzi=entry.hanzi,
-                    pinyin=get_effective_pinyin(entry),
-                    ru=translation,
-                    pos=entry.pos,
-                    examples=examples,
-                )
-            )
-
-        results = cleaned_results
-        results = results or []
+        results = [present_entry(entry) for entry in results]
 
     return templates.TemplateResponse(
         "results.html",
@@ -195,14 +162,9 @@ async def page_entry(
     if entry is None:
         raise HTTPException(status_code=404, detail="Entry not found")
 
-    translation, examples = split_ru_examples(entry.ru or "")
-
-    entry.ru = translation
-    entry.examples = examples
-
     return templates.TemplateResponse(
         "entry.html",
-        {"request": request, "entry": entry},
+        {"request": request, "entry": present_entry(entry)},
     )
 
 
