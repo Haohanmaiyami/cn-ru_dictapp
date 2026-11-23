@@ -251,6 +251,8 @@ class AdditiveImporterTests(unittest.TestCase):
         sys.modules[cls.module_name] = module
         module.__dict__.update(re=re, Path=Path, Optional=Optional, Iterator=Iterator,
                                dataclass=dataclass, parse_dsl_article=parse_dsl_article)
+        from dictapp.reverse_article import parse_reverse_article
+        module.__dict__["parse_reverse_article"] = parse_reverse_article
         exec(compile(ast.Module(body=nodes, type_ignores=[]), str(path), 'exec'), module.__dict__)
         cls.importer = module
 
@@ -295,12 +297,14 @@ class AdditiveImporterTests(unittest.TestCase):
         self.assertEqual(row.article['senses'][0]['definition'],
                          'polyaluminium chloride; polyaluminum chloride')
 
-    def test_bruks_keeps_existing_semantics_without_bkrs_structure(self):
+    def test_bruks_keeps_legacy_values_and_adds_original_article(self):
         row = self.import_one('[m1]你好 nǐ hǎo привет[/m]', name='dabruks_fixture.dsl', head='привет')
         self.assertEqual(row.ru_head, 'привет')
         self.assertEqual(row.hanzi, '你好')
-        self.assertIsNone(row.raw_dsl)
-        self.assertIsNone(row.article)
+        self.assertEqual(row.raw_dsl, '[m1]你好 nǐ hǎo привет[/m]')
+        self.assertEqual(row.article['source'],
+                         {'dictionary': 'bruks', 'language': 'ru', 'headword': 'привет'})
+        self.assertEqual(row.article['senses'][0]['definition'], '你好 nǐ hǎo привет')
 
 
 if __name__ == '__main__':

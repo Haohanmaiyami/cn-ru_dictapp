@@ -5,6 +5,7 @@ from dictapp.dsl_parser import parse_dsl_article
 from dictapp.inline_styles import enrich_article
 from dictapp.repo import get_effective_pinyin, split_ru_examples
 from dictapp.schemas import DictionaryArticle, EntryOut
+from dictapp.reverse_article import russian_headword
 
 
 def article_for_entry(entry) -> DictionaryArticle | None:
@@ -29,6 +30,13 @@ def article_for_entry(entry) -> DictionaryArticle | None:
 
 def present_entry(entry) -> EntryOut:
     article = article_for_entry(entry)
+    headword = russian_headword(entry) if article is not None else None
+    if headword is not None:
+        # Keep the old API fields and IDs stable. New clients display the source
+        # headword and the complete article, not just the first Chinese fragment.
+        return EntryOut(id=entry.id, hanzi=entry.hanzi, pinyin=get_effective_pinyin(entry),
+                        ru=entry.ru, pos=entry.pos, examples="", article=article,
+                        headword=headword, headword_language="ru")
     if article is None:
         translation, examples = split_ru_examples(entry.ru or "")
     elif article.version == 1:

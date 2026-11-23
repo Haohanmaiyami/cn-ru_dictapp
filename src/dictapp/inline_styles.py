@@ -277,7 +277,7 @@ def enrich_article(article: DictionaryArticle, raw: str | None) -> DictionaryArt
     if source is None:
         return article
     parsed, rows = source
-    if article.model_dump(exclude={"formatting"}) != parsed:
+    if article.model_dump(exclude={"formatting", "source"}) != parsed:
         # An edited/cache-mismatched article keeps its current text and no new styles.
         return article
     formatting = ArticleFormatting.model_validate({"version": 1, "rows": [
