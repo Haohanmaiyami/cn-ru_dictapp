@@ -79,15 +79,19 @@ def inspect_source_files(data_dir: Path) -> tuple[Path, ...]:
     return tuple(files)
 
 
-def iter_source_articles(data_dir: Path) -> Iterator[SourceArticle]:
+def iter_source_articles(data_dir: Path, *, source_names: set[str] | None = None) -> Iterator[SourceArticle]:
     """Yield each physical article once, keeping consecutive headword aliases.
 
     Distinct bodies with the same headword are deliberately preserved. Choosing
     which entries to retain or map to existing IDs belongs to the local loader.
     """
     files = inspect_source_files(data_dir)
+    if source_names is not None and not source_names <= set(SOURCE_FILENAMES):
+        raise SourceFormatError("Unknown source selection")
     known = set(files)
     for path in files:
+        if source_names is not None and path.name not in source_names:
+            continue
         heads: list[str] = []
         body_lines: list[str] = []
         has_body = False

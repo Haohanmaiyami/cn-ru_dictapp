@@ -69,11 +69,20 @@ class ArticleFormatting(BaseModel):
     rows: list[list[ArticleTextRun]]
 
 
+class ArticleSource(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    dictionary: Literal["bruks"]
+    language: Literal["ru"]
+    headword: str = Field(strict=True, min_length=1)
+
+
 class DictionaryArticle(BaseModel):
     version: Literal[1, 2]
     senses: list[ArticleSense] = Field(default_factory=list)
     blocks: list[ArticleBlock] = Field(default_factory=list)
     formatting: ArticleFormatting | None = None
+    source: ArticleSource | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -121,6 +130,8 @@ class DictionaryArticle(BaseModel):
         result.pop("blocks" if self.version == 1 else "senses", None)
         if self.formatting is None:
             result.pop("formatting", None)
+        if self.source is None:
+            result.pop("source", None)
         return result
 
 class EntryOut(BaseModel):
@@ -133,6 +144,16 @@ class EntryOut(BaseModel):
     pos: str | None =  None
     examples: str | None = None
     article: DictionaryArticle | None = None
+    headword: str | None = None
+    headword_language: Literal["ru"] | None = None
+
+    @model_serializer(mode="wrap")
+    def serialize_optional_direction(self, handler):
+        result = handler(self)
+        if self.headword is None or self.headword_language is None:
+            result.pop("headword", None)
+            result.pop("headword_language", None)
+        return result
 
 class SearchResponse(BaseModel):
     q: str

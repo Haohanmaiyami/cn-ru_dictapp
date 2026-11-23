@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dictapp.db import AsyncSessionMaker
 from dictapp.dsl_parser import parse_dsl_article
+from dictapp.reverse_article import parse_reverse_article
 from dictapp.models import Entry
 
 BAD_LOG_FILE = Path("bad_entries.log")
@@ -287,6 +288,8 @@ def iter_entries_for_file(path: Path, encoding: str = "utf-16") -> Iterator[Pars
                 pinyin=pinyin,
                 ru_head=ru_head,
                 ru_full=ru_full,
+                raw_dsl=body,
+                article=parse_reverse_article(ru_head, body),
             )
 
 
@@ -309,9 +312,13 @@ async def import_file(session: AsyncSession, file_path: Path, batch_size: int = 
             log_bad_entry("EMPTY_RU_HEAD", hanzi, pinyin, ru_full)
             continue
 
-        if not hanzi or hanzi.strip() == "-":
+        is_reverse = bool(item.article and item.article.get("source", {}).get("language") == "ru")
+        if (not hanzi or hanzi.strip() == "-") and not is_reverse:
             log_bad_entry("NO_HANZI", hanzi, pinyin, ru_head)
             continue
+
+        if is_reverse and hanzi.strip() == "-":
+            hanzi = ""  # A cross-reference article need not invent a Chinese headword.
 
         if not pinyin and len(hanzi) <= 4:
             log_bad_entry("NO_PINYIN", hanzi, None, ru_head)
@@ -328,7 +335,7 @@ async def import_file(session: AsyncSession, file_path: Path, batch_size: int = 
             print("===========================\n")
 
         e = Entry(
-            hanzi=hanzi if hanzi else "-",
+            hanzi=hanzi if is_reverse else (hanzi or "-"),
             pinyin=pinyin,
             ru=ru_head,
             pos=None,

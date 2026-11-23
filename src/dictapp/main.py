@@ -18,10 +18,12 @@ from fastapi.templating import Jinja2Templates
 from dictapp.schemas import AITranslateRuToCnRequest, AITranslateRuToCnResponse
 from dictapp.repo import get_effective_pinyin
 from dictapp.presentation import present_entry
+from dictapp.diagnostics import RequestDiagnosticsMiddleware
 
 app = FastAPI(
     title="Chinese-Russian Dictionary MVP",
 )
+app.add_middleware(RequestDiagnosticsMiddleware)
 
 
 app.mount("/static", StaticFiles(directory="src/dictapp/static"), name="static")
@@ -33,6 +35,7 @@ admin.add_view(EntryAdmin)
 
 @app.get("/api/health")
 async def api_health():
+    # Liveness only: this does not test PostgreSQL, dictionary queries or AI.
     return {"status": "ok"}
 
 @app.get("/api/search", response_model=SearchResponse)

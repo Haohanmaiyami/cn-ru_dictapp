@@ -20,7 +20,7 @@ import sys
 from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from backfill_legacy import project
+from backfill_legacy import project, project_reverse
 from dictionary_sources import inspect_source_files, iter_source_articles
 
 VERSION = 1
@@ -144,10 +144,12 @@ def add_candidate(connection, values, raw, article, origin):
                             signature))
 
 
-def build_catalog(directory, output):
+def build_catalog(directory, output, *, reverse_only=False):
     from dictapp.dsl_parser import parse_dsl_article
+    from dictapp.reverse_article import parse_reverse_article
     import dictapp.dsl_parser as parser_module
     import dictapp.dsl_recovery as recovery_module
+    import dictapp.reverse_article as reverse_module
 
     before = source_manifest(directory)
     connection = private_database(output)
@@ -155,9 +157,11 @@ def build_catalog(directory, output):
         put_meta(connection, "kind", "catalog")
         put_meta(connection, "complete", False)
         put_meta(connection, "sources", before)
+        put_meta(connection, "direction", "ru-zh" if reverse_only else "zh-ru")
         put_meta(connection, "parser_sha256", {
             "dsl_parser.py": file_hash(parser_module.__file__),
             "dsl_recovery.py": file_hash(recovery_module.__file__),
+            "reverse_article.py": file_hash(reverse_module.__file__),
             "backfill_legacy.py": file_hash(Path(__file__).with_name("backfill_legacy.py")),
             "dictionary_sources.py": file_hash(Path(__file__).with_name("dictionary_sources.py")),
         })
@@ -166,20 +170,25 @@ def build_catalog(directory, output):
             article TEXT, ambiguous INTEGER NOT NULL, occurrences INTEGER NOT NULL,
             origin TEXT NOT NULL, conflict_origin TEXT)""")
         counts = Counter()
-        for source in iter_source_articles(Path(directory)):
+        selected = {"dabruks.dsl"} if reverse_only else None
+        for source in iter_source_articles(Path(directory), source_names=selected):
             counts["physical_articles"] += 1
-            if source.source == "dabruks.dsl":
+            if source.source == "dabruks.dsl" and not reverse_only:
                 counts["reverse_articles_untouched"] += 1
                 continue
             article = parse_dsl_article(source.body)
             for head in source.heads:
-                values = project(head, source.body)
+                values = (project_reverse(head, source.body) if reverse_only else project(head, source.body))
                 if values is None:
                     counts["unmappable"] += 1
                     continue
-                add_candidate(connection, values, source.body, article,
+                desired_article = parse_reverse_article(head, source.body) if reverse_only else article
+                if reverse_only and desired_article is None:
+                    counts["unsupported_reverse_articles"] += 1
+                    continue
+                add_candidate(connection, values, source.body, desired_article,
                               f"{source.source}:{source.ordinal}")
-                counts["bkrs_candidates"] += 1
+                counts["bruks_candidates" if reverse_only else "bkrs_candidates"] += 1
             if counts["physical_articles"] % 10000 == 0:
                 connection.commit()
             if counts["physical_articles"] % 100000 == 0:
@@ -473,6 +482,8 @@ def main():
     catalog = commands.add_parser("catalog", help="Build private local source catalog; no DB connection")
     catalog.add_argument("--source-dir", required=True)
     catalog.add_argument("--output", required=True)
+    catalog.add_argument("--reverse-only", action="store_true",
+                         help="Recover existing BRuKS rows only; preserve IDs and all legacy fields")
     plan = commands.add_parser("plan", help="Read-only dry run; does not change PostgreSQL")
     plan.add_argument("--catalog", required=True)
     plan.add_argument("--output", required=True)
@@ -494,7 +505,7 @@ def main():
         parser.error("batch-size must be between 1 and 5000")
     try:
         if args.command == "catalog":
-            result = build_catalog(args.source_dir, args.output)
+            result = build_catalog(args.source_dir, args.output, reverse_only=args.reverse_only)
         elif args.command == "plan":
             result = asyncio.run(make_plan(args.catalog, args.output, args.dsn_env, args.batch_size))
         elif args.command in {"apply", "rollback"}:
